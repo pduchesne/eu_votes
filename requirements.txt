@@ -1,0 +1,10 @@
+ijson>=2.3
+jupyter-book>=0.3
+jupyterlab>=1.0.0a3
+numpy>=1.16.3
+pandas>=0.24.2
+plotly>=3.8.1
+requests>=2.21.0
+sklearn>=0.0
+urllib3<1.25,>=1.21.1
+nbimporter>=0.3.1
