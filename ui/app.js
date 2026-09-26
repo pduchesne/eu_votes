@@ -12,7 +12,10 @@ const GROUP_COLOUR = {
   EPP: [51, 102, 204], SD: [204, 51, 51], RENEW: [240, 160, 30], ALDE: [240, 160, 30],
   GREEN_EFA: [60, 150, 80], ECR: [90, 120, 170], GUE_NGL: [150, 40, 90],
   ID: [110, 90, 170], PFE: [110, 90, 170], ESN: [80, 70, 120],
-  EFDD: [130, 140, 150], ENF: [110, 90, 170], NI: [140, 145, 150],
+  // Groups that existed only in earlier terms. ALDE shares Renew's colour as its
+  // predecessor in the liberal family; they never appear in the same term. EFDD needs
+  // its own, having been too close to the grey used for non-attached members.
+  EFDD: [150, 110, 60], ENF: [110, 90, 170], NI: [140, 145, 150],
 };
 const FALLBACK = [150, 150, 150];
 

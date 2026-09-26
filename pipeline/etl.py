@@ -27,6 +27,49 @@ TABLES = [
 ]
 
 
+# The two ingest sources name the same political groups differently: parltrack writes
+# PPE, S&D, Verts/ALE, GUE/NGL where the other writes EPP, SD, GREEN_EFA, GUE_NGL. Left
+# alone, a group's own history does not join across terms — "the EPP since 2014" would
+# silently return nothing for the 8th term.
+#
+# Only groups that are the *same continuing group* are unified. ALDE is not folded into
+# Renew, nor EFDD and ENF into their successors: those were distinct groups, and merging
+# them would be a political claim rather than a naming fix.
+GROUP_ALIASES = {
+    "PPE": "EPP",
+    "S&D": "SD",
+    "Verts/ALE": "GREEN_EFA",
+    "GUE/NGL": "GUE_NGL",
+    "GUE_NGL_1995_0": "GUE_NGL",
+}
+
+# Groups that existed only in earlier terms still need a readable name.
+HISTORICAL_LABELS = {
+    "ALDE": "Alliance of Liberals and Democrats for Europe",
+    "EFDD": "Europe of Freedom and Direct Democracy",
+    "ENF": "Europe of Nations and Freedom",
+}
+
+
+def normalise_groups(con) -> None:
+    """Put every term on one group vocabulary, so a group joins to itself over time."""
+    for source, canonical in GROUP_ALIASES.items():
+        con.execute("UPDATE member_votes SET group_code = ? WHERE group_code = ?", [canonical, source])
+        con.execute("UPDATE group_memberships SET group_code = ? WHERE group_code = ?", [canonical, source])
+        con.execute("DELETE FROM groups WHERE code = ?", [source])
+    for code, label in HISTORICAL_LABELS.items():
+        con.execute(
+            "UPDATE groups SET label = ?, short_label = ?, official_label = ? WHERE code = ? AND label = code",
+            [label, code, label, code],
+        )
+    remaining = con.execute(
+        "SELECT DISTINCT group_code FROM member_votes WHERE group_code IN (SELECT unnest(?))",
+        [list(GROUP_ALIASES)],
+    ).fetchall()
+    if remaining:
+        raise SystemExit(f"group aliases not applied: {remaining}")
+
+
 def _latest_release(data_dir: Path) -> Path:
     releases = sorted((data_dir / "raw").glob("*/provenance.json"))
     if not releases:
@@ -57,6 +100,8 @@ def load(data_dir: Path, release: Path | None = None) -> Path:
     # Verification and reconciliation look ballots up per sitting, hundreds of times.
     # Without this each lookup scans all 25M rows, which is what exhausted memory.
     con.execute("CREATE INDEX IF NOT EXISTS idx_member_votes_vote ON member_votes(vote_id)")
+
+    normalise_groups(con)
 
     con.execute("CREATE TABLE terms (term INTEGER, start_date DATE, end_date DATE)")
     for term, start, end in TERMS:
