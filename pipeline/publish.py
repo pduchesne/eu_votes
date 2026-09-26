@@ -138,11 +138,15 @@ def publish(data_dir: Path) -> None:
                        v.procedure_reference, v.is_main, v.result,
                        v.count_for, v.count_against, v.count_abstention, v.count_did_not_vote,
                        list_filter(list(DISTINCT t.topic_label), x -> x IS NOT NULL) AS topics,
+                       -- How strongly this vote separates members along each axis. No
+                       -- political direction: component sign and rotation are arbitrary.
+                       any_value([round(vc.pc1, 5), round(vc.pc2, 5), round(vc.pc3, 5)]) AS components,
                        coalesce(ver.verified, false) AS verified,
                        coalesce(ver.partial, false) AS partially_verified
                 FROM votes v
                 LEFT JOIN vote_topics t ON t.vote_id = v.id
                 LEFT JOIN vote_verification ver ON ver.vote_id = v.id
+                LEFT JOIN vote_components vc ON vc.vote_id = v.id
                 WHERE v.term = ?
                   AND NOT EXISTS (SELECT 1 FROM vote_duplicate d WHERE d.vote_id = v.id)
                 GROUP BY ALL ORDER BY date, v.id

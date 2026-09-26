@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How the European Parliament votes</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header>
+  <a class="brand" href="#/landscape">How the European Parliament votes</a>
+  <nav>
+    <a href="#/landscape" data-view="landscape">Political landscape</a>
+    <a href="#/meps" data-view="meps">Members</a>
+    <a href="#/topics" data-view="topics">Topics</a>
+    <a href="#/methodology" data-view="methodology">How this is made</a>
+  </nav>
+</header>
+
+<main>
+  <p id="loading">Loading published data…</p>
+
+  <section id="view-landscape" hidden>
+    <h1>The political landscape, as the votes describe it</h1>
+    <p class="lede">
+      Every point is one Member of the European Parliament, placed by how they voted on
+      every roll-call vote of the term. Nobody assigned these positions — they fall out
+      of the voting record itself.
+    </p>
+    <div class="controls">
+      <label>Term
+        <select id="landscape-term"></select>
+      </label>
+      <label>Colour by
+        <select id="landscape-colour">
+          <option value="group">Political group</option>
+          <option value="country">Country</option>
+        </select>
+      </label>
+      <label>Highlight group
+        <select id="landscape-filter"><option value="">All groups</option></select>
+      </label>
+    </div>
+    <div id="deck-wrap"><canvas id="deck"></canvas></div>
+    <p class="caveat" id="landscape-caveat"></p>
+    <div id="landscape-detail" class="detail" hidden></div>
+    <h2>What separates the axes</h2>
+    <p class="note">
+      The votes whose outcome most distinguishes members along each axis. An axis has no
+      inherent direction: only distances and groupings mean anything, never "left" or
+      "right" of zero.
+    </p>
+    <div id="axis-votes" class="axis-grid"></div>
+  </section>
+
+  <section id="view-meps" hidden>
+    <h1>Members</h1>
+    <p class="lede">
+      Search by name, country or political group. Figures are roll-call participation:
+      Parliament does not publish a record of who was absent.
+    </p>
+    <input id="mep-search" type="search" placeholder="Search a member, country or group…" autocomplete="off">
+    <p class="note" id="mep-count"></p>
+    <div id="mep-results" class="cards"></div>
+    <div id="mep-detail" class="detail" hidden></div>
+  </section>
+
+  <section id="view-topics" hidden>
+    <h1>Topics</h1>
+    <p class="lede">
+      How often each political group's majority voted in favour, by subject area. Subjects
+      are Parliament's own classification, not ours, and cover substantive votes from 2019
+      onwards.
+    </p>
+    <div class="controls">
+      <label>Term <select id="topics-term"></select></label>
+    </div>
+    <div id="topics-table"></div>
+  </section>
+
+  <section id="view-methodology" hidden>
+    <h1>How this is made</h1>
+    <div id="methodology"></div>
+  </section>
+</main>
+
+<footer>
+  <p id="provenance"></p>
+</footer>
+
+<script src="https://unpkg.com/deck.gl@9.0.35/dist.min.js"></script>
+<script src="app.js" type="module"></script>
+</body>
+</html>

@@ -1,7 +1,7 @@
 ---
 id: CMP-UI-3DVIEW
 title: 3D Political Landscape View
-status: planned
+status: done
 node: Browser
 uses:
   IF-PUBLISHED-DATA: read PCA coordinates and MEP metadata to render the point cloud

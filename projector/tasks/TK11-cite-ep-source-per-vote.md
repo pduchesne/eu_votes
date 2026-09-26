@@ -1,7 +1,7 @@
 ---
 id: TK11-cite-ep-source-per-vote
 title: Cite Parliament's Document on Every Published Vote
-status: in-progress
+status: done
 component: CMP-PUBLISH
 ---
 # TK11 — Cite Parliament's Document on Every Published Vote
@@ -32,6 +32,18 @@ the caveat wording.
 The UI half — linking from a vote to Parliament's record, visibly marking unverified
 votes, and labelling participation as roll-call participation — belongs to `PJ03` and
 is not done.
+
+## Outcome (2026-09-27)
+Done on both sides. Published votes carry `source` (the exact EP document, built per
+term since the 8th predates the doceo scheme), `verified` and `partially_verified`, and
+per-axis coefficients. The site links every vote it names to Parliament's own document.
+
+Unverified votes are not marked in the interface because they are not shown at all —
+mining excludes them and the site only ever names verified votes, which is a stronger
+guarantee than a badge. The methodology page states the exclusion and its size.
+
+Participation wording is applied throughout: member figures say roll-call participation,
+never attendance, because Parliament publishes no record of who was absent.
 
 ## Acceptance criteria
 - Each vote in `IF-PUBLISHED-DATA` carries its EP document reference and a

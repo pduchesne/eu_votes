@@ -1,7 +1,7 @@
 ---
 id: CMP-UI
 title: Dashboard Shell
-status: planned
+status: done
 node: Browser
 uses:
   IF-PUBLISHED-DATA: read MEP records, topic stories, and provenance for display
