@@ -9,7 +9,7 @@ def main() -> None:
     )
     parser.add_argument(
         "stage",
-        choices=["fetch", "etl", "term8", "validate", "archive", "verify", "mine", "publish", "all"],
+        choices=["fetch", "etl", "term8", "meps", "validate", "archive", "verify", "mine", "parity", "publish", "all"],
         help="pipeline stage to run",
     )
     parser.add_argument(
@@ -41,6 +41,12 @@ def main() -> None:
         print("term8:")
         ingest(args.data_dir)
 
+    if args.stage in ("meps", "all"):
+        from .mep_details import enrich
+
+        print("meps:")
+        enrich(args.data_dir)
+
     if args.stage in ("validate", "all"):
         from .validate import validate
 
@@ -66,6 +72,12 @@ def main() -> None:
 
         print("mine:")
         mine(args.data_dir)
+
+    if args.stage in ("parity", "all"):
+        from .parity import parity
+
+        print("parity:")
+        parity(args.data_dir)
 
     if args.stage in ("publish", "all"):
         from .publish import publish

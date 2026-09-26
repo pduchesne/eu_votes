@@ -53,10 +53,11 @@ def publish(data_dir: Path) -> None:
         con,
         """
         SELECT m.id, m.first_name, m.last_name, m.country_code,
+               m.gender, m.constituency, m.photo_url, m.ep_url,
                list(DISTINCT c.group_code) AS groups,
                list(DISTINCT c.term) AS terms
         FROM members m JOIN mep_cohesion c ON c.member_id = m.id
-        GROUP BY 1, 2, 3, 4 ORDER BY m.last_name
+        GROUP BY ALL ORDER BY m.last_name
         """,
     )
     by_id = {m["id"]: m for m in meps}

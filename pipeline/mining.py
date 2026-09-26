@@ -84,11 +84,15 @@ def positions(con) -> dict:
                ORDER BY v.term"""
         ).fetchall()
     ]
+    loadings = {}
     for term in terms:
         members, votes, matrix = _matrix(con, term)
         pca = PCA(n_components=N_COMPONENTS)
         fitted = pca.fit_transform(matrix)
         coords[term] = (members, fitted)
+        # The loadings say which votes define each axis — the difference between
+        # knowing where an MEP sits and being able to say what the axis is about.
+        loadings[term] = (votes, pca.components_)
         meta[term] = {
             "meps": len(members),
             "votes": len(votes),
@@ -120,6 +124,8 @@ def positions(con) -> dict:
         print(f"    aligned T{term} onto T{REFERENCE_TERM} using {len(shared)} shared MEPs")
     meta["alignment"] = alignment
 
+    _write_components(con, loadings)
+
     con.execute("DROP TABLE IF EXISTS mep_positions")
     con.execute(
         "CREATE TABLE mep_positions (term INTEGER, member_id BIGINT, pc1 DOUBLE, pc2 DOUBLE, pc3 DOUBLE)"
@@ -133,6 +139,30 @@ def positions(con) -> dict:
             ],
         )
     return meta
+
+
+def _write_components(con, loadings: dict) -> None:
+    """Per-vote coefficient on each component.
+
+    A coefficient says how strongly a vote separates MEPs along an axis. It carries no
+    political direction: component sign and rotation are arbitrary, so these rank votes
+    by influence, they do not place them on a left-right scale.
+    """
+    con.execute("DROP TABLE IF EXISTS vote_components")
+    con.execute(
+        "CREATE TABLE vote_components (term INTEGER, vote_id BIGINT, pc1 DOUBLE, pc2 DOUBLE, pc3 DOUBLE)"
+    )
+    total = 0
+    for term, (votes, components) in loadings.items():
+        con.executemany(
+            "INSERT INTO vote_components VALUES (?, ?, ?, ?, ?)",
+            [
+                [term, int(vote_id), float(components[0][i]), float(components[1][i]), float(components[2][i])]
+                for i, vote_id in enumerate(votes)
+            ],
+        )
+        total += len(votes)
+    print(f"    component loadings stored for {total:,} votes")
 
 
 COHESION_SQL = """

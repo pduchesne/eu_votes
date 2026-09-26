@@ -1,0 +1,42 @@
+{
+  "_note": "Baseline for FR03, derived once from the 2019 pipeline's own output in attic/computed/ and from the archived EP record. Committed as a fixture so the parity check survives attic/ being pruned. Regenerate only if the archived analysis itself is corrected.",
+  "derived_at": "2026-09-26",
+  "term": 8,
+  "term_window": [
+    "2014-07-01",
+    "2019-07-02"
+  ],
+  "ep_record_rollcall_results": 10281,
+  "previous_analysis": {
+    "source": "attic/computed/",
+    "votes": 10227,
+    "meps_with_positions": 824,
+    "vote_component_coefficients": 10227,
+    "mep_fields": [
+      "active",
+      "birthdate",
+      "country",
+      "current_constituency",
+      "current_group",
+      "email",
+      "eu_homepage",
+      "gender",
+      "mep_id",
+      "name",
+      "picture",
+      "surname"
+    ],
+    "mep_field_fill": {
+      "name": 1.0,
+      "surname": 1.0,
+      "country": 0.9988,
+      "birthdate": 0.9915,
+      "email": 0.915,
+      "gender": 0.9867,
+      "picture": 1.0,
+      "eu_homepage": 1.0,
+      "current_constituency": 1.0
+    },
+    "mep_population": 824
+  }
+}
