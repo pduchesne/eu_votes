@@ -9,7 +9,8 @@ Task: `projector/tasks/TK12-review-data-licensing.md`. Reviewed 2026-09-26.
 
 | Source | Licence | What it covers |
 |---|---|---|
-| [HowTheyVote dataset](https://github.com/HowTheyVote/data) | Open Database License (ODbL) 1.0 | The CSV release we load |
+| [HowTheyVote dataset](https://github.com/HowTheyVote/data) | Open Database License (ODbL) 1.0 | The CSV release we load (9th and 10th terms) |
+| [Parltrack](https://parltrack.org/) | Open Database License (ODbL) 1.0 | 8th-term votes, MEP details, procedure titles and subjects |
 | European Parliament documents & API | EU reuse terms (see below) | Roll-call XML we archive; the underlying record |
 
 ## ODbL: which of our outputs is which
@@ -57,12 +58,26 @@ Our archive of roll-call XML (`TK09`) reproduces entire documents unaltered, whi
 what these terms ask for. If the archive is ever republished rather than kept as local
 evidence, each document must carry its source notice and original URL.
 
+## Parltrack
+
+Confirmed 2026-09-27: Parltrack publishes its **JSON dumps under ODbL v1.0** — the same
+licence as the other ingest source, so nothing changes in what we owe. Its source code is
+AGPLv3 and its site content CC-BY-SA-3.0, neither of which we use. Parltrack also notes
+that its data is scraped and may contain errors, which is consistent with what
+verification found: the 8th term's ballots disagree with Parliament's record on 141
+votes, and about 13,600 ballots name a member it could not resolve.
+
+Because both ingest sources are ODbL, the conclusion below is unchanged and simply
+better supported: our published bundles are a Derivative Database and ship under ODbL.
+
 ## What this obliges us to do
 
 1. Publish `IF-PUBLISHED-DATA` bundles under **ODbL 1.0**, with the licence URI
    included.
-2. Attribute both sources wherever data is shown: the **European Parliament** as the
-   source of record, and the **HowTheyVote dataset** as the ingest path, per ODbL §4.3.
+2. Attribute all three sources wherever data is shown: the **European Parliament** as the
+   record of record, and **HowTheyVote** and **Parltrack** as ingest paths, per ODbL §4.3.
+   Done: the site footer and its methodology page carry them, and `LICENSE.txt` ships
+   inside the published bundles so the licence travels with the data.
 3. Preserve source notices on anything derived from EP documents; never strip
    attribution from archived material.
 4. Keep the platform's own code and written content on a separate licence of our

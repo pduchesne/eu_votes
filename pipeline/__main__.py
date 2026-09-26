@@ -9,7 +9,7 @@ def main() -> None:
     )
     parser.add_argument(
         "stage",
-        choices=["fetch", "etl", "term8", "dossiers", "meps", "validate", "archive", "reconcile", "verify", "mine", "parity", "publish", "all"],
+        choices=["fetch", "etl", "term8", "dossiers", "meps", "validate", "archive", "reconcile", "verify", "mine", "parity", "publish", "site", "all"],
         help="pipeline stage to run",
     )
     parser.add_argument(
@@ -109,6 +109,13 @@ def main() -> None:
 
         print("publish:")
         publish(args.data_dir)
+
+
+    if args.stage in ("site", "all"):
+        from .site import build
+
+        print("site:")
+        build(args.data_dir)
 
 
 if __name__ == "__main__":

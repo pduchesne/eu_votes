@@ -38,6 +38,7 @@ Or any stage on its own, in order:
 | `verify` | Compare every ballot against that archive |
 | `mine` | PCA positions, group cohesion, topics |
 | `publish` | Emit the JSON bundles the UI consumes |
+| `site` | Assemble `site/` — interface plus data, ready to upload |
 
 `fetch` defaults to the latest weekly release and records which one it used. Pin it to
 reproduce an earlier build, since `latest` moves every week:
@@ -49,6 +50,16 @@ $> ./venv/bin/python -m pipeline fetch --tag 2026-09-26
 Everything lands under `data/` (gitignored): raw releases with a `provenance.json`
 recording release tag, checksums and the script commit; the DuckDB store; the archived
 EP record; and the published bundles.
+
+## Deploying
+
+```
+$> ./venv/bin/python -m pipeline site
+```
+
+Produces a self-contained `site/` directory — the interface, the published bundles and
+their licence — that can be uploaded to any static host. No build step, no server-side
+anything. See [ui/README.md](ui/README.md).
 
 ### A note on `archive`
 

@@ -83,15 +83,21 @@ const termLabel = (t) => `${t}th term (${TERM_YEARS[t] || ""})`;
 // ---------------------------------------------------------------- provenance
 
 function renderProvenance() {
-  const { verification, ingest_source, generated_at, reference_of_record } = state.meta;
+  const { verification, generated_at, reference_of_record, licence } = state.meta;
   const share = verification.votes_verified / verification.votes_in_store;
+  // Attribution is a licence obligation, not decoration: ODbL and the EP's reuse terms
+  // both require the sources to be credited wherever the data is shown.
+  const credits = (licence?.attribution || [])
+    .map((a) => `<a href="${a.url}">${a.statement || a.name}</a>${a.licence ? ` (${a.licence})` : ""}`)
+    .join(" · ");
   $("provenance").innerHTML = `
-    Built ${generated_at.slice(0, 10)} from
-    <a href="${ingest_source.repo}">${ingest_source.name}</a>
-    (${ingest_source.licence}, release ${ingest_source.release_tag}).
     ${num(verification.votes_verified)} of ${num(verification.votes_in_store)} votes
-    (${pct(share)}) were checked against ${reference_of_record.name}; figures are built
-    only from those. <a href="#/methodology">How this is made</a>.`;
+    (${pct(share)}) verified against ${reference_of_record.name}; every figure here is
+    built only from those. Built ${generated_at.slice(0, 10)}.
+    <a href="#/methodology">How this is made</a>.
+    <br>Sources: ${credits}.
+    ${licence ? `<br>This data is published under the
+      <a href="${licence.published_data.url}">${licence.published_data.name}</a>.` : ""}`;
 }
 
 function renderMethodology() {
@@ -133,6 +139,14 @@ function renderMethodology() {
       <tbody>${variance}</tbody></table></div>
     <p class="caveat">A component's sign and rotation are arbitrary. Distance and
     clustering carry meaning; being left or right of zero does not.</p>
+
+    <h2>Licence and credit</h2>
+    <p>${state.meta.licence?.published_data.note || ""}
+    The published bundles are available under the
+    <a href="${state.meta.licence?.published_data.url}">${state.meta.licence?.published_data.name}</a>.</p>
+    <ul>${(state.meta.licence?.attribution || [])
+      .map((a) => `<li><a href="${a.url}">${a.name}</a>${a.licence ? ` — ${a.licence}` : ""}${a.statement ? ` — ${a.statement}` : ""}<br><span class="note">${a.role}</span></li>`)
+      .join("")}</ul>
 
     <h2>What these figures are not</h2>
     <ul>${caveats.map((c) => `<li>${c}</li>`).join("")}</ul>`;

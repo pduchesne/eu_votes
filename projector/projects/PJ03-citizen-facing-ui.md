@@ -72,7 +72,8 @@ non-attached members scattered between. Console is clean.
 - `UC04.01` topic exploration now depends on `PJ05` deriving usable semantics; the
   current table is built on Parliament's partial subject tags.
 - No per-vote browser: votes appear only where the axes name them.
-- Not deployed anywhere; `TK12`'s attribution requirements are documented but not yet
-  rendered in the footer.
+- Not deployed anywhere yet, but ready to be: `pipeline site` produces a self-contained
+  19MB directory needing no server-side anything, and the licence obligations are
+  satisfied, so publishing it is now a decision rather than a task.
 
 No deadline set yet.

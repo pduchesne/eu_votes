@@ -24,7 +24,21 @@ Both answers feed the public-facing methodology page (`UC05`) and may influence 
 much the platform leans on each source — a share-alike obligation that we are content
 to honour is fine; one discovered after launch is not.
 
-## Outcome (2026-09-26)
+## Completed (2026-09-27)
+Attribution is now rendered, which was the acceptance criterion the earlier review left
+open. The site footer and its methodology page credit all three sources, and
+`LICENSE.txt` ships inside the published bundles so the licence travels with the data as
+ODbL asks.
+
+Parltrack's terms were confirmed rather than assumed: its JSON dumps are **ODbL v1.0**,
+the same licence as the other ingest source. Since we had come to depend on it for the
+8th term, member details and procedure titles, leaving that unchecked would have been a
+real gap. It changes nothing in what we owe.
+
+`pipeline site` assembles a self-contained directory — interface, bundles and licence —
+that can be uploaded anywhere static.
+
+## Earlier review (2026-09-26)
 Settled in `docs/licensing.md`. The decisive ODbL distinction: our published bundles
 are a **Derivative Database** (share-alike applies, so they ship under ODbL), while the
 dashboard, its charts and topic stories are **Produced Works** (share-alike does not

@@ -16,6 +16,40 @@ import duckdb
 from .archive import DOC_URL, DOC_URL_T8, document_url
 from .provenance import now, script_version
 
+# Both ingest sources publish under ODbL, which makes our bundles a Derivative Database
+# and share-alike applies (docs/licensing.md). The licence travels with the data rather
+# than living only in a document nobody downloads.
+LICENCE = {
+    "published_data": {
+        "name": "Open Database License (ODbL) v1.0",
+        "url": "https://opendatacommons.org/licenses/odbl/1-0/",
+        "note": "These bundles are a Derivative Database of ODbL sources, so they are "
+                "published under the same terms. Works built from them - charts, "
+                "articles - are Produced Works and are not bound by share-alike, but "
+                "must credit the sources below.",
+    },
+    "attribution": [
+        {
+            "name": "European Parliament",
+            "statement": "© European Union — Source: European Parliament",
+            "url": "https://www.europarl.europa.eu/",
+            "role": "the record of record: every vote is verified against it",
+        },
+        {
+            "name": "HowTheyVote.eu",
+            "licence": "ODbL v1.0",
+            "url": "https://github.com/HowTheyVote/data",
+            "role": "ingest path for the 9th and 10th terms",
+        },
+        {
+            "name": "Parltrack",
+            "licence": "ODbL v1.0",
+            "url": "https://parltrack.org/",
+            "role": "8th term votes, member details, and procedure titles",
+        },
+    ],
+}
+
 
 def _write(out: Path, name: str, payload) -> None:
     path = out / name
@@ -188,6 +222,7 @@ def publish(data_dir: Path) -> None:
                 "note": "Every vote links to the document it was verified against.",
             },
             "ingest_source": source,
+            "licence": LICENCE,
             "verification": summary,
             "analysis": mining,
             "terms": terms,
@@ -208,5 +243,15 @@ def publish(data_dir: Path) -> None:
                 " disagreement.",
             ],
         },
+    )
+    # ODbL asks that the licence travel with the database, so it ships beside it.
+    (out / "LICENSE.txt").write_text(
+        "The data in this directory is published under the "
+        f"{LICENCE['published_data']['name']}.\n{LICENCE['published_data']['url']}\n\n"
+        + "\n".join(
+            f"- {a['name']}: {a.get('statement') or a.get('licence')} <{a['url']}>"
+            for a in LICENCE["attribution"]
+        )
+        + "\n"
     )
     con.close()
