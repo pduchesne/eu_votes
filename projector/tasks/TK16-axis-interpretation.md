@@ -1,7 +1,7 @@
 ---
 id: TK16-axis-interpretation
 title: Compute Per-Vote Component Coefficients and Axis Interpretation
-status: in-progress
+status: done
 component: CMP-MINING
 ---
 # TK16 — Compute Per-Vote Component Coefficients and Axis Interpretation
@@ -41,8 +41,14 @@ implementation and the defence white paper.
 
 Term-8 coefficient count (10,112) is bounded by analysed coverage, not by this task.
 
-**Outstanding:** analysis over an arbitrary date window. The pipeline still fits whole
-terms only, so "how did this group move during the pandemic" remains unanswerable.
+Windowed analysis is restored too: `mine --window 2020-03-01:2021-06-30` fits positions
+for any date range over verified votes and rotates them into the reference term's frame,
+so a window is comparable with everything else instead of floating in its own arbitrary
+orientation.
+
+Sanity-checked on the pandemic window: 715 MEPs, group ordering identical to the full
+term (ID/ECR at one end, Greens/S&D at the other) with compressed magnitudes, which is
+what a correctly aligned shorter window should look like.
 
 ## Acceptance criteria
 - Per-vote component coefficients computed for every analysed term and published.

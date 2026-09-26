@@ -42,18 +42,25 @@ VERIFIED_ONLY = """
 """
 
 
-def _matrix(con, term: int):
+def _matrix(con, term: int | None = None, window: tuple[str, str] | None = None):
+    """Ballot matrix for a whole term, or for an arbitrary date window."""
+    if window:
+        clause, params = "CAST(v.timestamp AS DATE) BETWEEN ? AND ?", list(window)
+    else:
+        clause, params = "v.term = ?", [term]
     rows = con.execute(
-        """
+        f"""
         SELECT mv.member_id, mv.vote_id,
                CASE mv.position WHEN 'FOR' THEN 1 ELSE -1 END AS value
         FROM member_votes mv
         JOIN votes v ON v.id = mv.vote_id
-        """ + VERIFIED_ONLY + """
-        WHERE v.term = ? AND mv.position IN ('FOR', 'AGAINST')
+        {VERIFIED_ONLY}
+        WHERE {clause} AND mv.position IN ('FOR', 'AGAINST')
         """,
-        [term],
+        params,
     ).fetchnumpy()
+    if len(rows["member_id"]) == 0:
+        raise SystemExit("no verified votes in that range")
 
     members = np.unique(rows["member_id"])
     votes = np.unique(rows["vote_id"])
@@ -256,6 +263,55 @@ def topics(con) -> None:
     covered = con.execute("SELECT count(*) FROM votes").fetchone()[0]
     print(f"    topics: {total:,} of {covered:,} votes tagged; top: " +
           ", ".join(f"{label} ({n})" for label, n in rows))
+
+
+def window_positions(data_dir: Path, start: str, end: str) -> None:
+    """Fit positions for an arbitrary date window (restores the old temporal_slice).
+
+    Rotated into the same frame as the reference term so a window is comparable with
+    everything else rather than floating in its own arbitrary orientation.
+    """
+    con = duckdb.connect(str(data_dir / "eu_votes.duckdb"))
+    con.execute("SET enable_progress_bar=false")
+    con.execute("SET memory_limit='3GB'")
+
+    members, votes, matrix = _matrix(con, window=(start, end))
+    pca = PCA(n_components=N_COMPONENTS)
+    fitted = pca.fit_transform(matrix)
+    print(
+        f"    {start} to {end}: {len(members)} MEPs x {len(votes)} votes,"
+        f" PC1-3 explain {pca.explained_variance_ratio_.sum():.1%}"
+    )
+
+    reference = con.execute(
+        "SELECT member_id, pc1, pc2, pc3 FROM mep_positions WHERE term = ? ORDER BY member_id",
+        [REFERENCE_TERM],
+    ).fetchall()
+    ref_members = np.array([r[0] for r in reference])
+    ref_coords = np.array([[r[1], r[2], r[3]] for r in reference])
+    shared = np.intersect1d(ref_members, members)
+    if len(shared) >= 3:
+        rotation = _align(
+            fitted[np.searchsorted(members, shared)],
+            ref_coords[np.searchsorted(ref_members, shared)],
+        )
+        fitted = fitted @ rotation
+        print(f"    aligned onto T{REFERENCE_TERM} using {len(shared)} shared MEPs")
+    else:
+        print("    too few shared MEPs to align — positions are in their own frame")
+
+    con.execute(
+        """CREATE TABLE IF NOT EXISTS window_positions (
+               start_date DATE, end_date DATE, member_id BIGINT,
+               pc1 DOUBLE, pc2 DOUBLE, pc3 DOUBLE)"""
+    )
+    con.execute("DELETE FROM window_positions WHERE start_date = ? AND end_date = ?", [start, end])
+    con.executemany(
+        "INSERT INTO window_positions VALUES (?, ?, ?, ?, ?, ?)",
+        [[start, end, int(m), float(p[0]), float(p[1]), float(p[2])] for m, p in zip(members, fitted)],
+    )
+    con.close()
+    print(f"    stored {len(members)} positions for the window")
 
 
 def mine(data_dir: Path) -> None:

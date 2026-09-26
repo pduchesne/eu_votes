@@ -25,6 +25,9 @@ def main() -> None:
         "--term", type=int, help="verify: check one term only (results accumulate)"
     )
     parser.add_argument("--offset", type=int, help="verify: skip this many documents")
+    parser.add_argument(
+        "--window", help="mine: fit positions for a date range, e.g. 2020-03-01:2021-06-30"
+    )
     args = parser.parse_args()
 
     if args.stage in ("fetch", "all"):
@@ -78,10 +81,16 @@ def main() -> None:
             raise SystemExit(1)
 
     if args.stage in ("mine", "all"):
-        from .mining import mine
-
         print("mine:")
-        mine(args.data_dir)
+        if args.window:
+            from .mining import window_positions
+
+            start, _, end = args.window.partition(":")
+            window_positions(args.data_dir, start, end)
+        else:
+            from .mining import mine
+
+            mine(args.data_dir)
 
     if args.stage in ("parity", "all"):
         from .parity import parity

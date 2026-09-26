@@ -1,7 +1,7 @@
 ---
 id: PJ04-term8-parity
 title: Parity With the 2019 Analysis
-status: in-progress
+status: done
 members:
   - FR03-term8-parity
   - CMP-ETL
@@ -45,7 +45,7 @@ Parliament's record, never by relaxing `FR02`. Parity and verification are not i
 tension — the point is to verify more, not to check less.
 
 ## Progress (2026-09-27)
-`TK14`, `TK15`, `TK17` done; `TK16` done but for arbitrary date-window analysis.
+All four tasks done. The milestone closes with one measure deliberately red — see below.
 
 | Measure | 2019 analysis | Now | |
 |---|---|---|---|
