@@ -241,15 +241,21 @@ def topics(con) -> None:
     The codes are hierarchical ('6.10.04' sits under '6'), so the top level gives a
     citizen-legible set of themes without any clustering or NLP.
     """
+    # Both levels are kept. The seven top-level areas are the browsable frame; the 414
+    # leaf codes are what "votes about asylum" actually needs, and collapsing to the top
+    # level threw that away.
     con.execute("DROP TABLE IF EXISTS vote_topics")
     con.execute(
         """
         CREATE TABLE vote_topics AS
         SELECT DISTINCT sv.vote_id,
                split_part(sv.oeil_subject_code, '.', 1) AS topic_code,
-               top.label AS topic_label
+               top.label AS topic_label,
+               sv.oeil_subject_code AS subject_code,
+               leaf.label AS subject_label
         FROM oeil_subject_votes sv
         JOIN oeil_subjects top ON top.code = split_part(sv.oeil_subject_code, '.', 1)
+        JOIN oeil_subjects leaf ON leaf.code = sv.oeil_subject_code
         JOIN vote_verification ver ON ver.vote_id = sv.vote_id AND ver.verified
         """
     )
@@ -261,7 +267,8 @@ def topics(con) -> None:
     ).fetchall()
     total = con.execute("SELECT count(DISTINCT vote_id) FROM vote_topics").fetchone()[0]
     covered = con.execute("SELECT count(*) FROM votes").fetchone()[0]
-    print(f"    topics: {total:,} of {covered:,} votes tagged; top: " +
+    leaves = con.execute("SELECT count(DISTINCT subject_code) FROM vote_topics").fetchone()[0]
+    print(f"    topics: {total:,} of {covered:,} votes tagged across {leaves} subjects; top: " +
           ", ".join(f"{label} ({n})" for label, n in rows))
 
 

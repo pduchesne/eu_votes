@@ -222,10 +222,16 @@ function renderTopics() {
     return;
   }
   const groups = [...new Set(rows.map((r) => r.group_code))].sort();
-  const topics = [...new Set(rows.map((r) => r.topic_label))].sort();
+  // Busiest subjects first: with 147 of them in the 8th term, alphabetical order buries
+  // everything anyone would actually look for.
+  const volume = new Map();
+  rows.forEach((r) => volume.set(r.topic_label, (volume.get(r.topic_label) || 0) + r.votes));
+  const topics = [...volume.keys()].sort((a, b) => volume.get(b) - volume.get(a));
   const lookup = new Map(rows.map((r) => [`${r.topic_label}|${r.group_code}`, r]));
+  const basis = rows[0].basis || "substantive votes";
 
-  $("topics-table").innerHTML = `<div class="scroll"><table>
+  $("topics-table").innerHTML = `<p class="note">${topics.length} subjects, busiest first.</p>
+    <div class="scroll"><table>
     <thead><tr><th>Subject</th>${groups.map((g) => `<th class="num">${g}</th>`).join("")}</tr></thead>
     <tbody>${topics
       .map((topic) => {
@@ -239,9 +245,12 @@ function renderTopics() {
         return `<tr><td>${topic}</td>${cells}</tr>`;
       })
       .join("")}</tbody></table></div>
-    <p class="caveat">Share of substantive votes on that subject where the group's
-    majority voted in favour. Subjects are Parliament's own classification. A dash means
-    fewer than ten such votes.</p>`;
+    <p class="caveat">Share of ${basis} on that subject where the group's majority voted
+    in favour. Subjects are Parliament's own Legislative Observatory classification, not
+    ours. A dash means fewer than fifteen such votes for that group.
+    ${basis === "all votes"
+      ? "This term's source carries no flag separating substantive votes from amendments, so its figures cover all roll-call votes and are not directly comparable with the other terms."
+      : ""}</p>`;
 }
 
 // ---------------------------------------------------------------- landscape

@@ -105,7 +105,8 @@ def publish(data_dir: Path) -> None:
             con,
             """
             WITH group_position AS (
-                SELECT t.topic_code, t.topic_label, v.term, mv.group_code,
+                SELECT t.subject_code AS topic_code, t.subject_label AS topic_label,
+                       v.term, mv.group_code,
                        mv.vote_id,
                        arg_max(mv.position, mv.n) AS majority
                 FROM (
@@ -115,15 +116,20 @@ def publish(data_dir: Path) -> None:
                     GROUP BY 1, 2, 3
                 ) mv
                 JOIN vote_topics t ON t.vote_id = mv.vote_id
-                JOIN votes v ON v.id = mv.vote_id AND v.is_main
+                -- The 8th term's source carries no main-vote flag, so its figures cover
+                -- all roll-call votes. That is stated per row rather than quietly
+                -- mixing two different bases into one column.
+                JOIN votes v ON v.id = mv.vote_id
+                             AND (v.is_main OR v.term = 8)
                 GROUP BY 1, 2, 3, 4, 5
             )
             SELECT topic_code, topic_label, term, group_code,
                    count(*) AS votes,
+                   CASE WHEN term = 8 THEN 'all votes' ELSE 'substantive votes' END AS basis,
                    round(avg(CASE WHEN majority = 'FOR' THEN 1.0 ELSE 0.0 END), 4) AS support
             FROM group_position
-            GROUP BY 1, 2, 3, 4
-            HAVING count(*) >= 10
+            GROUP BY 1, 2, 3, 4, 6
+            HAVING count(*) >= 15
             ORDER BY topic_code, term, group_code
             """,
         ),
@@ -137,7 +143,7 @@ def publish(data_dir: Path) -> None:
                 SELECT v.id, strftime(v.timestamp, '%Y-%m-%d') AS date, v.display_title AS title,
                        v.procedure_reference, v.is_main, v.result,
                        v.count_for, v.count_against, v.count_abstention, v.count_did_not_vote,
-                       list_filter(list(DISTINCT t.topic_label), x -> x IS NOT NULL) AS topics,
+                       list_filter(list(DISTINCT t.subject_label), x -> x IS NOT NULL) AS topics,
                        -- How strongly this vote separates members along each axis. No
                        -- political direction: component sign and rotation are arbitrary.
                        any_value([round(vc.pc1, 5), round(vc.pc2, 5), round(vc.pc3, 5)]) AS components,

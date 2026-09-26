@@ -6,7 +6,27 @@ component: CMP-MINING
 ---
 # TK18 — Derive Topic Semantics for Every Vote
 
-## Scope
+## Progress (2026-09-27)
+The prerequisite turned out to be data, not modelling. The 8th term had no procedure
+titles at all — nothing to derive a topic *from* — and `pipeline/dossiers.py` now
+resolves them from parltrack's dossier dump at 97% coverage, bringing Parliament's own
+subject codes with them. Topic coverage went from 0% to 97% for the 8th term, and from
+roughly two-thirds to ~95% for the others. Browsing uses the 414 leaf subject codes
+rather than seven top-level areas.
+
+That removes coverage as the motivation. What is left to build, and why:
+- **Similarity** — "votes like this one" across the whole corpus, which no taxonomy
+  provides.
+- **Sub-procedure resolution** — official subjects describe the dossier, so every
+  amendment in a procedure inherits one label. Distinguishing them needs the vote's own
+  text.
+- **The ~9,300 votes with no procedure reference**, which no amount of dossier data
+  reaches.
+
+Measure before modelling still applies, and the validation set is now much larger: ~27k
+votes carry official subjects to check derived topics against.
+
+## Original scope
 Give every verified vote a semantic representation computed from its own text, so the
 corpus can be explored by subject without depending on who happened to tag what
 (`FR04`). Two complementary outputs:
