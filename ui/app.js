@@ -16,7 +16,7 @@ const GROUP_COLOUR = {
 };
 const FALLBACK = [150, 150, 150];
 
-const state = { meta: null, meps: [], groups: [], topics: [], stories: [], votes: {}, term: null, deck: null };
+const state = { meta: null, axisVotes: null, meps: [], groups: [], topics: [], stories: [], votes: {}, term: null, deck: null };
 
 const $ = (id) => document.getElementById(id);
 const pct = (v) => (v == null ? "—" : `${(v * 100).toFixed(1)}%`);
@@ -481,33 +481,24 @@ function renderLegend(mode, countries, points) {
 
 async function renderAxisVotes() {
   const term = state.term;
-  if (!state.votes[term]) {
-    try {
-      state.votes[term] = await load(`votes-t${term}.json`);
-    } catch {
-      $("axis-votes").innerHTML = `<p class="note">Vote list for this term is unavailable.</p>`;
-      return;
-    }
+  if (!state.axisVotes) {
+    // A precomputed shortlist: ranking axes in the browser would mean downloading the
+    // entire vote list for the term, which is megabytes for three short lists.
+    state.axisVotes = await load("axis-votes.json").catch(() => []);
   }
-  if (state.term !== term) return; // the user moved on while it loaded
-
-  const votes = state.votes[term].filter((v) => v.verified && v.components);
-  if (!votes.length) {
+  const rows = state.axisVotes.filter((v) => v.term === term);
+  if (!rows.length) {
     $("axis-votes").innerHTML =
-      `<p class="note">Per-vote axis coefficients are not present in this build of the
-       published data.</p>`;
+      `<p class="note">Axis coefficients are not present in this build of the published data.</p>`;
     return;
   }
-  $("axis-votes").innerHTML = [0, 1, 2]
+  $("axis-votes").innerHTML = [1, 2, 3]
     .map((axis) => {
-      const top = votes
-        .slice()
-        .sort((a, b) => Math.abs(b.components[axis]) - Math.abs(a.components[axis]))
-        .slice(0, 5);
-      return `<section><h3>Axis ${axis + 1}</h3><ol>${top
+      const top = rows.filter((v) => v.axis === axis).slice(0, 5);
+      return `<section><h3>Axis ${axis}</h3><ol>${top
         .map(
-          (v) => `<li><a href="${v.source}">${v.title || v.procedure_reference || v.id}</a>
-            <br><span class="note">${v.date}${v.topics?.length ? ` · ${v.topics[0]}` : ""}</span></li>`
+          (v) => `<li><a href="${v.source}">${escape(v.title || v.id)}</a>
+            <br><span class="note">${v.date}</span></li>`
         )
         .join("")}</ol></section>`;
     })

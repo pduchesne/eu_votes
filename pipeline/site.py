@@ -33,8 +33,13 @@ def build(data_dir: Path, out: Path = Path("site")) -> Path:
         '<p><a href="ui/">How the European Parliament votes</a></p>\n'
     )
 
+    # GitHub Pages runs Jekyll by default, which skips files and directories beginning
+    # with an underscore and adds a build step this site does not need.
+    (out / ".nojekyll").write_text("")
+
     total = sum(f.stat().st_size for f in out.rglob("*") if f.is_file())
     files = sum(1 for f in out.rglob("*") if f.is_file())
     print(f"  {files} files, {total / 1e6:.1f} MB in {out}/")
     print(f"  upload {out}/ as-is; it needs no server-side anything")
+    print("  for GitHub Pages: scripts/deploy-gh-pages.sh")
     return out

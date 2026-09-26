@@ -206,6 +206,29 @@ def publish(data_dir: Path) -> None:
     if stories:
         _write(out, "stories.json", stories)
 
+    # The landscape only needs the handful of votes that define each axis. Shipping the
+    # whole per-term vote list for that meant a visitor downloading up to 9MB to render
+    # three short lists.
+    axis_votes = _rows(
+        con,
+        """
+        WITH ranked AS (
+            SELECT vc.term, axis, v.id, v.display_title AS title,
+                   strftime(v.timestamp, '%Y-%m-%d') AS date, coefficient,
+                   row_number() OVER (PARTITION BY vc.term, axis ORDER BY abs(coefficient) DESC) AS rank
+            FROM vote_components vc
+            JOIN votes v ON v.id = vc.vote_id
+            CROSS JOIN (VALUES (1), (2), (3)) AS axes(axis)
+            CROSS JOIN LATERAL (SELECT CASE axes.axis WHEN 1 THEN vc.pc1 WHEN 2 THEN vc.pc2 ELSE vc.pc3 END AS coefficient) c
+        )
+        SELECT term, axis, id, title, date, round(coefficient, 5) AS coefficient
+        FROM ranked WHERE rank <= 6 ORDER BY term, axis, rank
+        """,
+    )
+    for row in axis_votes:
+        row["source"] = document_url(row["term"], row["date"])
+    _write(out, "axis-votes.json", axis_votes)
+
     source = json.loads(
         con.execute("SELECT source FROM _provenance LIMIT 1").fetchone()[0]
     )

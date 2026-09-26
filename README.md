@@ -61,6 +61,25 @@ Produces a self-contained `site/` directory — the interface, the published bun
 their licence — that can be uploaded to any static host. No build step, no server-side
 anything. See [ui/README.md](ui/README.md).
 
+### GitHub Pages
+
+```
+$> ./scripts/deploy-gh-pages.sh
+```
+
+Rewrites the `gh-pages` branch as a single orphan commit and force-pushes it, then
+Pages serves it at `https://<user>.github.io/eu_votes/`. The branch is replaced rather
+than appended to: the site is ~19MB of regenerated data, and keeping a history of
+snapshots nobody will check out would add that much to the repository on every deploy.
+The pipeline is the source of truth; `gh-pages` is only ever a rendering of it.
+
+Raw data stays out of `master` — `data/` and `site/` are gitignored, and the pipeline
+rebuilds them.
+
+A visitor loads about 1.2MB: the member records, groups, subjects, stories and the
+shortlist of votes defining each axis. The full per-vote lists are published alongside
+under ODbL for anyone who wants them, but the interface never downloads them.
+
 ### A note on `archive`
 
 Parliament's roll-call documents are public and need no account, but sit behind an AWS
