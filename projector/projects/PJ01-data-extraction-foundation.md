@@ -1,7 +1,7 @@
 ---
 id: PJ01-data-extraction-foundation
 title: Data Extraction Foundation
-status: planning
+status: in-progress
 members:
   - UC03.01-acquire-data
   - CMP-FETCH

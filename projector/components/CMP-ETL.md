@@ -1,7 +1,7 @@
 ---
 id: CMP-ETL
 title: Normalize & Load
-status: planned
+status: done
 node: Platform
 ---
 # CMP-ETL — Normalize & Load

@@ -1,7 +1,7 @@
 ---
 id: TK03-implement-etl-normalize
 title: Implement ETL Normalization Script
-status: todo
+status: done
 component: CMP-ETL
 ---
 # TK03 — Implement ETL Normalization Script

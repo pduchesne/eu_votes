@@ -1,7 +1,7 @@
 ---
 id: TK05-extract-current-term
 title: Extract and Normalize Current Term (2024-2029, to date)
-status: todo
+status: done
 component: CMP-ETL
 ---
 # TK05 — Extract and Normalize Current Term (2024-2029, to date)

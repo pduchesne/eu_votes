@@ -1,7 +1,7 @@
 ---
 id: CMP-FETCH
 title: Raw Data Fetcher
-status: planned
+status: done
 node: Platform
 uses:
   IF-RAW-SOURCE: pull raw MEP and vote dumps from the EP data source

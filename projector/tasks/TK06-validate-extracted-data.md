@@ -1,7 +1,7 @@
 ---
 id: TK06-validate-extracted-data
 title: Validate Extracted Data
-status: todo
+status: in-progress
 component: CMP-ETL
 ---
 # TK06 — Validate Extracted Data
@@ -34,6 +34,33 @@ Checks to cover:
   catches a systematically mis-parsed source.
 - **Referential integrity** — every ballot references a known MEP and a known vote; no
   orphans.
+
+## Status (2026-09-26)
+Automated checks implemented in `pipeline/validate.py`, run via
+`python -m pipeline validate`, exiting non-zero on failure. All currently pass:
+
+- Referential integrity: 0 orphan ballots either direction, 0 votes without ballots.
+- **Counted ballots match the published tallies on all 25,204 votes** — the strongest
+  single check available, since it cross-validates our parse against the source's own
+  aggregates.
+- Roster bounds match official seat counts exactly: T9 696-751 (751 seats pre-Brexit,
+  705 after), T10 717-719 (720 seats).
+- No UK ballots after 2020-02-01 — the Brexit transition is correctly reflected.
+- Every vote assigned to a term, and dated inside it.
+- Positions confined to `FOR`/`AGAINST`/`ABSTENTION`/`DID_NOT_VOTE`.
+- 870 distinct MEPs in T9 and 743 in T10 against 751/720 seats — more people than
+  seats, as expected with mid-term replacement.
+
+One WARN, judged acceptable: 629 ballots of 17,872,194 (0.004%) carry no political
+group, consistent with non-attached members or brief affiliation gaps.
+
+### Still owed
+The **spot-check against the Parliament's own roll-call record** — the only check that
+catches a systematically mis-parsed source, and the reason it cannot be skipped given
+we ingest a third-party derivation. It is not yet done because the EP's servers return
+HTTP 202 with an empty body to automated requests from the build environment, so the
+DOCEO RCV XML has to be retrieved by hand. Until this is done for both terms, `PJ01`
+is not complete.
 
 ## Acceptance criteria
 - Validation runs as a pipeline stage and fails loudly on violation.

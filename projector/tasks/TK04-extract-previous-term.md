@@ -1,7 +1,7 @@
 ---
 id: TK04-extract-previous-term
 title: Extract and Normalize Previous Term (2019-2024)
-status: todo
+status: done
 component: CMP-ETL
 ---
 # TK04 — Extract and Normalize Previous Term (2019-2024)

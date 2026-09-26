@@ -1,7 +1,7 @@
 ---
 id: TK02-implement-fetch-script
 title: Implement Raw Data Fetch Script
-status: todo
+status: done
 component: CMP-FETCH
 ---
 # TK02 — Implement Raw Data Fetch Script

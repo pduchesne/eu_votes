@@ -1,7 +1,7 @@
 ---
 id: CMP-ORCH
 title: Pipeline Orchestrator
-status: planned
+status: in-development
 node: Platform
 ---
 # CMP-ORCH — Pipeline Orchestrator

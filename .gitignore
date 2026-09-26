@@ -4,3 +4,5 @@
 /tmp
 /attic
 *.iml
+/data
+__pycache__/
