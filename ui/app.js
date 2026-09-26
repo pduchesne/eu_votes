@@ -19,7 +19,7 @@ const GROUP_COLOUR = {
 };
 const FALLBACK = [150, 150, 150];
 
-const state = { meta: null, axisVotes: null, meps: [], groups: [], topics: [], stories: [], votes: {}, term: null, deck: null };
+const state = { meta: null, axisVotes: null, axes: null, meps: [], groups: [], topics: [], stories: [], votes: {}, term: null, deck: null };
 
 const $ = (id) => document.getElementById(id);
 const pct = (v) => (v == null ? "—" : `${(v * 100).toFixed(1)}%`);
@@ -51,6 +51,7 @@ async function boot() {
   initLandscape();
   initMeps();
   initTopics();
+  initAxes();
   renderStoryList();
   window.addEventListener("hashchange", route);
   route();
@@ -58,13 +59,14 @@ async function boot() {
 
 function route() {
   const view = (location.hash.replace("#/", "") || "landscape").split("/")[0];
-  const known = ["landscape", "meps", "topics", "stories", "methodology"];
+  const known = ["landscape", "meps", "axes", "topics", "stories", "methodology"];
   const active = known.includes(view) ? view : "landscape";
   known.forEach((name) => ($(`view-${name}`).hidden = name !== active));
   document.querySelectorAll("nav a").forEach((a) =>
     a.classList.toggle("active", a.dataset.view === active)
   );
   if (active === "landscape") drawLandscape();
+  if (active === "axes") renderAxes();
 }
 
 function termOptions(select, onChange) {
@@ -271,6 +273,123 @@ function renderTopics() {
     ${basis === "all votes"
       ? "This term's source carries no flag separating substantive votes from amendments, so its figures cover all roll-call votes and are not directly comparable with the other terms."
       : ""}</p>`;
+}
+
+// ---------------------------------------------------------------- axes
+
+function initAxes() {
+  termOptions($("axes-term"), renderAxes);
+}
+
+/** Where each group's members sit along one axis, as a row of small density curves.
+ *
+ * Each group is scaled to its own peak rather than to a shared one. Otherwise the two
+ * largest groups would be the only legible shapes, and the question here is where a
+ * group sits, not how large it is. */
+function ridgeline(term, axis, groups) {
+  const values = new Map();
+  for (const mep of state.meps) {
+    const record = mep.record[term];
+    if (!record?.position) continue;
+    const group = record.group_code || "NI";
+    if (!values.has(group)) values.set(group, []);
+    values.get(group).push(record.position[axis - 1]);
+  }
+  const all = [...values.values()].flat();
+  if (!all.length) return "";
+  const lo = Math.min(...all), hi = Math.max(...all);
+  const bins = 60, rowHeight = 26, labelWidth = 92, width = 640, pad = 8;
+  const order = [...values.keys()].sort(
+    (a, b) => mean(values.get(a)) - mean(values.get(b))
+  );
+  const height = order.length * rowHeight + 26;
+  const x = (v) => labelWidth + ((v - lo) / (hi - lo || 1)) * (width - labelWidth - pad);
+
+  const rows = order.map((group, index) => {
+    const counts = new Array(bins).fill(0);
+    for (const v of values.get(group)) {
+      const bin = Math.min(bins - 1, Math.floor(((v - lo) / (hi - lo || 1)) * bins));
+      counts[bin] += 1;
+    }
+    // A light three-point smooth: with a few dozen members per group the raw histogram
+    // is spiky enough to read as noise rather than shape.
+    const smooth = counts.map((_, i) =>
+      (counts[i - 1] || 0) * 0.25 + counts[i] * 0.5 + (counts[i + 1] || 0) * 0.25
+    );
+    const peak = Math.max(...smooth) || 1;
+    const baseline = index * rowHeight + rowHeight - 4;
+    const points = smooth.map((value, i) => {
+      const px = labelWidth + ((i + 0.5) / bins) * (width - labelWidth - pad);
+      return `${px.toFixed(1)},${(baseline - (value / peak) * (rowHeight - 7)).toFixed(1)}`;
+    });
+    const [r, g, b] = GROUP_COLOUR[group] || FALLBACK;
+    return `
+      <path d="M${labelWidth},${baseline} L${points.join(" L")} L${width - pad},${baseline} Z"
+            fill="rgb(${r},${g},${b})" fill-opacity="0.62"
+            stroke="rgb(${r},${g},${b})" stroke-width="0.8"/>
+      <text class="label" x="${labelWidth - 6}" y="${baseline - 2}" text-anchor="end">${escape(
+        groupLabel(group)
+      )}</text>`;
+  });
+
+  const zero = lo < 0 && hi > 0
+    ? `<line class="axis-line" x1="${x(0)}" y1="4" x2="${x(0)}" y2="${height - 22}"
+             stroke-dasharray="2 3"/>`
+    : "";
+  return `<svg class="ridge" viewBox="0 0 ${width} ${height}" role="img"
+       aria-label="Distribution of each political group along axis ${axis}">
+    ${zero}
+    ${rows.join("")}
+    <line class="axis-line" x1="${labelWidth}" y1="${height - 20}" x2="${width - pad}" y2="${height - 20}"/>
+    <text class="tick" x="${labelWidth}" y="${height - 8}">${lo.toFixed(0)}</text>
+    <text class="tick" x="${width - pad}" y="${height - 8}" text-anchor="end">${hi.toFixed(0)}</text>
+  </svg>`;
+}
+
+const mean = (xs) => xs.reduce((a, b) => a + b, 0) / (xs.length || 1);
+
+function renderEnd(end, side) {
+  const keywords = end.keywords.length
+    ? `<p class="keywords">Recurring words: <b>${end.keywords.map(escape).join(", ")}</b></p>`
+    : "";
+  const subjects = end.subjects.length
+    ? `<p class="subject">Mostly: ${end.subjects.map(([s]) => escape(s)).join(" · ")}</p>`
+    : "";
+  return `<div class="end">
+    <h3>Voting <em>for</em> these puts a member at the ${side}</h3>
+    ${keywords}${subjects}
+    <ol>${end.votes
+      .slice(0, 5)
+      .map(
+        (v) => `<li><a href="${v.source}">${escape(v.title)}</a>
+          <span class="subject">${v.date}</span></li>`
+      )
+      .join("")}</ol></div>`;
+}
+
+async function renderAxes() {
+  if (!state.axes) state.axes = await load("axes.json").catch(() => []);
+  const entries = state.axes.filter((a) => a.term === state.term);
+  if (!entries.length) {
+    $("axes-list").innerHTML = `<p class="note">No axis data published for this term.</p>`;
+    return;
+  }
+  $("axes-list").innerHTML = entries
+    .map(
+      (entry) => `<section class="axis-card">
+        <h2>Axis ${entry.axis}</h2>
+        <p class="variance">Accounts for ${pct(entry.explained_variance)} of the variation
+          in how members voted. Members span ${entry.span.min.toFixed(0)} to
+          ${entry.span.max.toFixed(0)} on it; each group's curve is scaled to its own
+          peak, so the shape shows where a group sits, not how large it is.</p>
+        ${ridgeline(entry.term, entry.axis)}
+        <div class="ends">
+          ${renderEnd(entry.negative, "left")}
+          ${renderEnd(entry.positive, "right")}
+        </div>
+      </section>`
+    )
+    .join("");
 }
 
 // ---------------------------------------------------------------- stories

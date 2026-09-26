@@ -9,6 +9,7 @@ authority is europarl.europa.eu rather than whichever dataset we happened to loa
 """
 
 import json
+import re
 from pathlib import Path
 
 import duckdb
@@ -55,6 +56,34 @@ def _write(out: Path, name: str, payload) -> None:
     path = out / name
     path.write_text(json.dumps(payload, separators=(",", ":"), sort_keys=False) + "\n")
     print(f"    {name}: {path.stat().st_size / 1024:.0f} KB")
+
+
+# Words that appear in almost every procedure title and so distinguish nothing. Kept
+# deliberately short: an over-aggressive list hides the vocabulary that actually differs
+# between the two ends of an axis.
+BOILERPLATE = {
+    "the", "of", "and", "for", "on", "to", "in", "a", "an", "as", "at", "by", "with",
+    "from", "its", "it", "or", "no", "not", "into", "under", "over", "between",
+    "european", "europe", "eu", "union", "parliament", "council", "commission",
+    "commission's", "report", "reports", "regulation", "directive", "decision",
+    "proposal", "amending", "implementation", "establishing", "rules", "certain",
+    "general", "common", "concerning", "regards", "respect", "framework", "measures",
+    "objection", "pursuant", "rule", "resolution", "draft", "annual", "year", "years",
+    # Budget votes label the Commission's section "III", which says nothing about subject.
+    "iii", "iia", "section", "sections",
+}
+
+
+def _keywords(titles: list[str], limit: int = 7) -> list[str]:
+    """The vocabulary that characterises one end of an axis."""
+    counts: dict[str, int] = {}
+    for title in titles:
+        for word in re.findall(r"[a-z][a-z'-]{2,}", (title or "").lower()):
+            if word in BOILERPLATE:
+                continue
+            counts[word] = counts.get(word, 0) + 1
+    ranked = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
+    return [word for word, count in ranked[:limit] if count > 1]
 
 
 def _rows(con, sql: str, params=None) -> list[dict]:
@@ -229,10 +258,69 @@ def publish(data_dir: Path) -> None:
         row["source"] = document_url(row["term"], row["date"])
     _write(out, "axis-votes.json", axis_votes)
 
+    mining = json.loads(con.execute("SELECT pca FROM _mining LIMIT 1").fetchone()[0])
+
+    # One entry per term and axis, with each end described separately. An axis has no
+    # inherent direction, so what makes it readable is knowing which votes a member is
+    # voting *for* at each end — that is what the sign of a loading tells you.
+    axes = []
+    for term in terms:
+        variance = mining.get(str(term), {}).get("explained_variance", [])
+        span = con.execute(
+            "SELECT min(pc1), max(pc1), min(pc2), max(pc2), min(pc3), max(pc3)"
+            " FROM mep_positions WHERE term = ?",
+            [term],
+        ).fetchone()
+        for axis in (1, 2, 3):
+            entry = {
+                "term": term,
+                "axis": axis,
+                "explained_variance": variance[axis - 1] if len(variance) >= axis else None,
+                "span": {"min": span[(axis - 1) * 2], "max": span[(axis - 1) * 2 + 1]},
+            }
+            for end, order in (("positive", "DESC"), ("negative", "ASC")):
+                top = _rows(
+                    con,
+                    f"""
+                    SELECT v.id, coalesce(nullif(v.procedure_title, ''), v.display_title) AS title,
+                           strftime(v.timestamp, '%Y-%m-%d') AS date,
+                           round(vc.pc{axis}, 5) AS coefficient,
+                           (SELECT t.subject_label FROM vote_topics t WHERE t.vote_id = v.id LIMIT 1) AS subject
+                    FROM vote_components vc JOIN votes v ON v.id = vc.vote_id
+                    WHERE vc.term = ? ORDER BY vc.pc{axis} {order} LIMIT 60
+                    """,
+                    [term],
+                )
+                for row in top:
+                    row["source"] = document_url(term, row["date"])
+
+                # Amendments on one report share a procedure title, so the strongest
+                # loadings are often the same dossier several times over. Keep the
+                # strongest instance of each so the list shows five different things.
+                seen: set[str] = set()
+                distinct = []
+                for row in top:
+                    key = (row["title"] or "").strip().lower()
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    distinct.append(row)
+
+                subjects: dict[str, int] = {}
+                for row in top:
+                    if row["subject"]:
+                        subjects[row["subject"]] = subjects.get(row["subject"], 0) + 1
+                entry[end] = {
+                    "votes": distinct[:6],
+                    "keywords": _keywords([r["title"] for r in top]),
+                    "subjects": sorted(subjects.items(), key=lambda kv: -kv[1])[:4],
+                }
+            axes.append(entry)
+    _write(out, "axes.json", axes)
+
     source = json.loads(
         con.execute("SELECT source FROM _provenance LIMIT 1").fetchone()[0]
     )
-    mining = json.loads(con.execute("SELECT pca FROM _mining LIMIT 1").fetchone()[0])
     _write(
         out,
         "meta.json",

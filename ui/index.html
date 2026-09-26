@@ -13,6 +13,7 @@
   <nav>
     <a href="#/landscape" data-view="landscape">Political landscape</a>
     <a href="#/meps" data-view="meps">Members</a>
+    <a href="#/axes" data-view="axes">Axes</a>
     <a href="#/topics" data-view="topics">Topics</a>
     <a href="#/stories" data-view="stories">Stories</a>
     <a href="#/methodology" data-view="methodology">How this is made</a>
@@ -65,6 +66,20 @@
     <p class="note" id="mep-count"></p>
     <div id="mep-results" class="cards"></div>
     <div id="mep-detail" class="detail" hidden></div>
+  </section>
+
+  <section id="view-axes" hidden>
+    <h1>What the axes are made of</h1>
+    <p class="lede">
+      The political space is not drawn from any theory: the axes are simply the patterns
+      that best separate how members voted. Each has no inherent direction — what gives
+      an end its meaning is which votes a member is voting <em>for</em> when they sit
+      there.
+    </p>
+    <div class="controls">
+      <label>Term <select id="axes-term"></select></label>
+    </div>
+    <div id="axes-list"></div>
   </section>
 
   <section id="view-topics" hidden>

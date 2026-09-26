@@ -154,3 +154,22 @@ a { color: var(--accent); }
 }
 .story-card { display: block; }
 .story-card .who { font-size: 1rem; }
+
+.axis-card {
+  border: 1px solid var(--line); border-radius: var(--radius);
+  background: var(--panel); padding: 1rem 1.2rem; margin-bottom: 1.4rem;
+}
+.axis-card > h2 { margin: 0 0 0.15rem; font-size: 1.15rem; }
+.axis-card .variance { font-size: 0.85rem; color: var(--muted); margin: 0 0 0.9rem; }
+.ridge { width: 100%; height: auto; display: block; margin: 0.4rem 0 0.2rem; }
+.ridge .label { font-size: 9px; fill: var(--muted); }
+.ridge .axis-line { stroke: var(--line); stroke-width: 1; }
+.ridge .tick { font-size: 9px; fill: var(--muted); }
+.ends { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); margin-top: 0.9rem; }
+.end { border-top: 2px solid var(--line); padding-top: 0.6rem; }
+.end h3 { margin: 0 0 0.3rem; font-size: 0.9rem; }
+.end .keywords { font-size: 0.85rem; margin: 0 0 0.5rem; }
+.end .keywords b { font-weight: 650; }
+.end ol { margin: 0; padding-left: 1.1rem; font-size: 0.84rem; }
+.end li { margin-bottom: 0.4rem; }
+.end .subject { color: var(--muted); font-size: 0.78rem; }
