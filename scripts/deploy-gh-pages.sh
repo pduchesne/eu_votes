@@ -19,7 +19,9 @@ cd "$(dirname "$0")/.."
 
 commit=$(git rev-parse --short HEAD)
 work=$(mktemp -d)
-trap 'rm -rf "$work"' EXIT
+# Remove the worktree through git, not just the directory: deleting the directory alone
+# leaves git holding a stale registration that a later run trips over.
+trap 'cd "$OLDPWD" 2>/dev/null || true; git worktree remove --force "$work" 2>/dev/null || true; rm -rf "$work"' EXIT
 
 git worktree add --detach "$work" >/dev/null
 cd "$work"
@@ -29,9 +31,10 @@ git rm -rf . >/dev/null 2>&1 || true
 cp -r "$OLDPWD/$SITE/." .
 git add -A
 git commit -q -m "Publish site built from $commit"
+# The branch is committed locally before this point, so a push that fails for want of
+# credentials leaves the work intact: authenticate and push, no rebuild needed.
 git push -f origin "$BRANCH"
 
 cd "$OLDPWD"
-git worktree remove --force "$work"
 echo "pushed $BRANCH — enable Pages for this branch at:"
 echo "  https://github.com/pduchesne/eu_votes/settings/pages"
