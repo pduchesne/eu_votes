@@ -1,7 +1,7 @@
 ---
 id: TK09-archive-ep-rollcall-record
 title: Archive Parliament's Roll-Call Record for Every Sitting
-status: todo
+status: done
 component: CMP-FETCH
 ---
 # TK09 — Archive Parliament's Roll-Call Record for Every Sitting
@@ -26,6 +26,23 @@ Known mechanics, already established in `TK06`:
 Crawl politely: this is a public institution's infrastructure and the WAF exists
 because of bulk scraping. Fetch incrementally, cache permanently (these documents do
 not change once published), and only ever fetch a sitting once.
+
+## Outcome (2026-09-26)
+**577 sittings archived, ~2.4GB**, covering all three terms. Incremental and
+append-only; a re-run fetches only what is missing.
+
+Two things only contact with the real thing revealed:
+- **The 8th term predates the doceo scheme entirely.** Its documents live under
+  `RegData/seance_pleniere/proces_verbal/{year}/{md}/liste_presence/P8_PV(...)`. A first
+  run built doceo URLs for term 8, got 404 for all 230 sittings and recorded them as
+  "absent" — which would have permanently poisoned the archive index had it not been
+  caught and cleared.
+- **Only doceo paths trigger the WAF.** The token must therefore be minted against a
+  doceo URL even when the document being fetched lives elsewhere; minting against a
+  RegData URL yields no token at all.
+
+2 sittings have votes in our store but no roll-call document, recorded as `absent` so
+they are neither retried forever nor mistaken for failures.
 
 ## Acceptance criteria
 - Every sitting in T9 and T10 with roll-call votes has its XML archived locally.

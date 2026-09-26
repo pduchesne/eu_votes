@@ -15,8 +15,9 @@ Three deliberate choices, each of which changes what the numbers mean:
    to rotation and sign, so two independently fitted terms are not comparable and
    "moved left since 2019" would be meaningless. We fit each term separately — a joint
    fit is the wrong tool, since the vote sets are disjoint and the dominant component
-   would just be "which term" — then rotate T10 onto T9's frame using the 340 MEPs who
-   served in both.
+   would just be "which term" — then rotate each other term onto T9's frame using the
+   MEPs who served in both (307 for T8, 337 for T10). T9 is the reference because it is
+   the only term overlapping both others.
 
 Ballots encode as FOR=+1, AGAINST=-1, and abstention or non-voting as 0. That treats
 an abstention as a neutral position rather than as missing data.
@@ -33,6 +34,13 @@ from .provenance import now, script_version
 
 N_COMPONENTS = 3
 
+# FR02: a figure may only be built from ballots verified against Parliament's record.
+# Votes that failed verification, or that have no counterpart in the archived record,
+# are excluded from every model here rather than being quietly averaged in.
+VERIFIED_ONLY = """
+    JOIN vote_verification ver ON ver.vote_id = v.id AND ver.verified
+"""
+
 
 def _matrix(con, term: int):
     rows = con.execute(
@@ -41,6 +49,7 @@ def _matrix(con, term: int):
                CASE mv.position WHEN 'FOR' THEN 1 ELSE -1 END AS value
         FROM member_votes mv
         JOIN votes v ON v.id = mv.vote_id
+        """ + VERIFIED_ONLY + """
         WHERE v.term = ? AND mv.position IN ('FOR', 'AGAINST')
         """,
         [term],
@@ -67,7 +76,14 @@ REFERENCE_TERM = 9
 
 def positions(con) -> dict:
     meta, coords = {}, {}
-    terms = [r[0] for r in con.execute("SELECT DISTINCT term FROM votes ORDER BY term").fetchall()]
+    terms = [
+        r[0]
+        for r in con.execute(
+            """SELECT DISTINCT v.term FROM votes v
+               JOIN vote_verification ver ON ver.vote_id = v.id AND ver.verified
+               ORDER BY v.term"""
+        ).fetchall()
+    ]
     for term in terms:
         members, votes, matrix = _matrix(con, term)
         pca = PCA(n_components=N_COMPONENTS)
@@ -124,6 +140,7 @@ WITH cast_votes AS (
     SELECT mv.vote_id, mv.member_id, mv.position, mv.group_code, v.term
     FROM member_votes mv
     JOIN votes v ON v.id = mv.vote_id
+    JOIN vote_verification ver ON ver.vote_id = v.id AND ver.verified
     WHERE mv.position <> 'DID_NOT_VOTE'
       AND mv.group_code IS NOT NULL AND mv.group_code <> ''
       {main_filter}
@@ -196,6 +213,7 @@ def topics(con) -> None:
                top.label AS topic_label
         FROM oeil_subject_votes sv
         JOIN oeil_subjects top ON top.code = split_part(sv.oeil_subject_code, '.', 1)
+        JOIN vote_verification ver ON ver.vote_id = sv.vote_id AND ver.verified
         """
     )
     rows = con.execute(

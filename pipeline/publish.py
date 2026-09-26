@@ -13,9 +13,8 @@ from pathlib import Path
 
 import duckdb
 
+from .archive import DOC_URL, DOC_URL_T8, document_url
 from .provenance import now, script_version
-
-EP_DOC = "https://www.europarl.europa.eu/doceo/document/PV-{term}-{date}-RCV_EN.xml"
 
 
 def _write(out: Path, name: str, payload) -> None:
@@ -42,11 +41,13 @@ def publish(data_dir: Path) -> None:
     if verification is None:
         raise SystemExit("nothing verified yet — run `archive` then `verify` (FR02)")
     summary = json.loads(verification[0])
-    if summary["discrepancies"]:
-        raise SystemExit(
-            f"{summary['discrepancies']} votes disagree with Parliament's record —"
-            " refusing to publish (FR02)"
-        )
+    # FR02 blocks the *affected* figures, not the whole publication: mining already
+    # excludes unverified votes, and each vote below carries its own status, so a
+    # reader can see exactly what is and is not backed by Parliament's record.
+    print(
+        f"    {summary['votes_verified']:,}/{summary['votes_in_store']:,} votes verified;"
+        f" {summary['discrepancies']:,} excluded as unverified"
+    )
 
     meps = _rows(
         con,
@@ -75,14 +76,9 @@ def publish(data_dir: Path) -> None:
         entry = by_id.get(row.pop("member_id"))
         if entry is not None:
             term = row.pop("term")
-            entry["record"][str(term)] = {
-                **row,
-                "position": (
-                    [round(row.pop("pc1"), 3), round(row.pop("pc2"), 3), round(row.pop("pc3"), 3)]
-                    if row.get("pc1") is not None
-                    else None
-                ),
-            }
+            pcs = [row.pop("pc1"), row.pop("pc2"), row.pop("pc3")]
+            row["position"] = None if pcs[0] is None else [round(v, 3) for v in pcs]
+            entry["record"][str(term)] = row
     _write(out, "meps.json", meps)
 
     _write(
@@ -131,29 +127,30 @@ def publish(data_dir: Path) -> None:
         ),
     )
 
-    for term in (9, 10):
-        _write(
-            out,
-            f"votes-t{term}.json",
-            _rows(
+    terms = [r[0] for r in con.execute("SELECT DISTINCT term FROM votes ORDER BY term").fetchall()]
+    for term in terms:
+        rows = _rows(
                 con,
                 f"""
                 SELECT v.id, strftime(v.timestamp, '%Y-%m-%d') AS date, v.display_title AS title,
                        v.procedure_reference, v.is_main, v.result,
                        v.count_for, v.count_against, v.count_abstention, v.count_did_not_vote,
-                       list(DISTINCT t.topic_label) AS topics,
-                       '{EP_DOC}' AS source_template,
+                       list_filter(list(DISTINCT t.topic_label), x -> x IS NOT NULL) AS topics,
                        coalesce(ver.verified, false) AS verified,
                        coalesce(ver.partial, false) AS partially_verified
                 FROM votes v
                 LEFT JOIN vote_topics t ON t.vote_id = v.id
                 LEFT JOIN vote_verification ver ON ver.vote_id = v.id
                 WHERE v.term = ?
-                GROUP BY ALL ORDER BY v.timestamp
+                GROUP BY ALL ORDER BY date, v.id
                 """,
                 [term],
-            ),
         )
+        # Each vote cites the document it was verified against. The 8th term predates
+        # the doceo scheme, so the URL is built per term rather than templated.
+        for row in rows:
+            row["source"] = document_url(term, row["date"])
+        _write(out, f"votes-t{term}.json", rows)
 
     source = json.loads(
         con.execute("SELECT source FROM _provenance LIMIT 1").fetchone()[0]
@@ -167,13 +164,18 @@ def publish(data_dir: Path) -> None:
             "script": script_version(),
             "reference_of_record": {
                 "name": "European Parliament plenary minutes (roll-call votes)",
-                "url_template": EP_DOC,
+                "url_templates": {"terms 9+": DOC_URL, "term 8": DOC_URL_T8},
                 "note": "Every vote links to the document it was verified against.",
             },
             "ingest_source": source,
             "verification": summary,
             "analysis": mining,
+            "terms": terms,
             "caveats": [
+                "The 8th term (2014-2019) comes from a different source and is not"
+                " equivalent: it records only MEPs who actually voted, and carries no"
+                " main-vote flag and no subject tags. Participation, substantive-vote"
+                " and topic figures cover 2019 onwards only.",
                 "Figures cover roll-call votes only. Votes by show of hands or secret"
                 " ballot are not recorded per MEP by anyone, including Parliament.",
                 "'Did not vote' is not published by Parliament; it is derived from the"

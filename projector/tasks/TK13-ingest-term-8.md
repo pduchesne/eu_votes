@@ -1,7 +1,7 @@
 ---
 id: TK13-ingest-term-8
 title: Ingest the 2014-2019 Term from a Second Source
-status: in-progress
+status: done
 component: CMP-FETCH
 ---
 # TK13 — Ingest the 2014-2019 Term from a Second Source
@@ -39,6 +39,19 @@ Recorded as NULLs, never as guesses, and never to be presented as equivalent to 
 4,408 of the term's votes carry non-numeric parltrack identifiers (strings such as
 `2017-12-12 00:00:00-1.`). Rather than drop them, they receive deterministic negative
 ids that cannot collide with real ones.
+
+## Outcome (2026-09-26)
+11,286 votes and 7,303,183 ballots ingested; 855 MEPs and 1,304 group spells, all
+reconciled to existing `member_id`s with no matching heuristics.
+
+Two source limitations, both measured rather than estimated:
+- **13,638 ballots (0.19%) name an MEP parltrack could not resolve**, recording an
+  `obscure_id` placeholder instead of an identity. They are excluded, counted, and
+  recorded per vote so verification can tell this known gap apart from a genuine
+  disagreement with Parliament.
+- **4,408 votes carry non-numeric source identifiers** and receive deterministic
+  synthetic ids. Those cannot be joined to Parliament's record, so they remain
+  unverified and are excluded from published figures.
 
 ## Acceptance criteria
 - Term 8 votes, ballots, MEPs and group spells load into the same store as terms 9-10.

@@ -1,7 +1,7 @@
 ---
 id: FR02-primary-record-verification
 title: Every Ballot Verified Against Parliament's Published Record
-status: planned
+status: in-development
 ---
 # FR02 — Every Ballot Verified Against Parliament's Published Record
 

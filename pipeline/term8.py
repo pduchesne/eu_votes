@@ -102,6 +102,7 @@ def _vote_id(raw) -> int:
 
 def load_votes(raw: Path):
     votes, ballots, synthetic, unresolved = [], [], 0, 0
+    unattributed: dict[int, int] = {}
     for vote in _stream(raw / "ep_votes.json.zst"):
         timestamp = str(vote.get("ts", ""))
         if not _in_term8(timestamp) or "votes" not in vote:
@@ -128,6 +129,7 @@ def load_votes(raw: Path):
                         # surname). The ballot is real but unattributable, so it is
                         # counted and reported rather than silently dropped.
                         unresolved += 1
+                        unattributed[vote_id] = unattributed.get(vote_id, 0) + 1
 
         refs = vote.get("epref") or []
         votes.append(
@@ -148,7 +150,7 @@ def load_votes(raw: Path):
             f"    {unresolved:,} ballots name an MEP parltrack could not resolve"
             f" ({unresolved / (len(ballots) + unresolved):.2%}); excluded, not attributable"
         )
-    return votes, ballots
+    return votes, ballots, unattributed
 
 
 def load_meps(raw: Path, needed: set[int]):
@@ -178,7 +180,7 @@ def load_meps(raw: Path, needed: set[int]):
 def ingest(data_dir: Path) -> None:
     raw = fetch_dumps(data_dir)
     print("  parsing votes (streaming a ~500MB decompressed dump)")
-    votes, ballots = load_votes(raw)
+    votes, ballots, unattributed = load_votes(raw)
     print(f"    {len(votes):,} votes, {len(ballots):,} ballots in the 8th term")
 
     needed = {mep_id for _, mep_id, _, _ in ballots}
@@ -241,6 +243,14 @@ def ingest(data_dir: Path) -> None:
         f"""INSERT INTO group_memberships (member_id, group_code, term, start_date, end_date)
             SELECT member_id, group_code, term, start_date, end_date FROM {memberships_csv}"""
     )
+
+    # Per-vote record of what the source could not attribute, so verification can tell
+    # a known ingest gap apart from a genuine disagreement with Parliament.
+    con.execute("DROP TABLE IF EXISTS term8_unattributed")
+    con.execute("CREATE TABLE term8_unattributed (vote_id BIGINT, ballots INTEGER)")
+    if unattributed:
+        gap_csv = bulk("unattributed", ["vote_id", "ballots"], sorted(unattributed.items()))
+        con.execute(f"INSERT INTO term8_unattributed SELECT vote_id, ballots FROM {gap_csv}")
 
     # Group codes of the 8th term (ALDE, EFDD, ENF...) are not all in the current
     # lookup; add the missing ones so nothing silently drops out of published output.

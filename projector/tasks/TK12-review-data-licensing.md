@@ -1,7 +1,7 @@
 ---
 id: TK12-review-data-licensing
 title: Review Licensing of Ingested and Republished Data
-status: todo
+status: done
 ---
 # TK12 — Review Licensing of Ingested and Republished Data
 
@@ -23,6 +23,16 @@ Two questions:
 Both answers feed the public-facing methodology page (`UC05`) and may influence how
 much the platform leans on each source — a share-alike obligation that we are content
 to honour is fine; one discovered after launch is not.
+
+## Outcome (2026-09-26)
+Settled in `docs/licensing.md`. The decisive ODbL distinction: our published bundles
+are a **Derivative Database** (share-alike applies, so they ship under ODbL), while the
+dashboard, its charts and topic stories are **Produced Works** (share-alike does not
+reach them, only an attribution notice). EP reuse terms permit commercial and
+non-commercial reuse provided entire items are reproduced with source acknowledged.
+
+Open and deliberately undecided: whether to republish the EP roll-call archive itself
+rather than keep it as local verification evidence.
 
 ## Acceptance criteria
 - A written statement of the licence applying to each ingested source, and the

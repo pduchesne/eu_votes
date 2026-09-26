@@ -1,7 +1,7 @@
 ---
 id: TK11-cite-ep-source-per-vote
 title: Cite Parliament's Document on Every Published Vote
-status: todo
+status: in-progress
 component: CMP-PUBLISH
 ---
 # TK11 — Cite Parliament's Document on Every Published Vote
@@ -22,6 +22,16 @@ Wording matters here and is part of the task, not decoration:
   described as roll-call participation rather than attendance in general.
 - Votes whose ballots could not be verified must say so, rather than being silently
   presented alongside verified ones.
+
+## Status (2026-09-26)
+The data half is done: every published vote carries `source` (the exact EP document it
+was verified against, built per term since the 8th predates the doceo scheme) plus
+`verified` and `partially_verified` flags. `meta.json` carries the coverage summary and
+the caveat wording.
+
+The UI half — linking from a vote to Parliament's record, visibly marking unverified
+votes, and labelling participation as roll-call participation — belongs to `PJ03` and
+is not done.
 
 ## Acceptance criteria
 - Each vote in `IF-PUBLISHED-DATA` carries its EP document reference and a

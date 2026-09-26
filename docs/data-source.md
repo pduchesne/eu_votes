@@ -116,10 +116,23 @@ means any figure we publish can cite the exact release it came from.
 sample. A vote whose ballots disagree blocks publication rather than being logged and
 passed over.
 
-An earlier sampling check covered four sittings (2019-10-10, 2020-01-15, 2023-11-22,
-2026-09-17) and found all 628 votes in agreement. That gave us confidence in the
-approach; full-corpus verification replaced it, because sampling catches systematic
-mis-parsing well and sparse errors poorly.
+**577 sittings are archived (~2.4GB) and 30,414 of 36,490 votes (83.3%) verify against
+Parliament's own record.** The two terms with complete metadata are effectively clean —
+19,091 of 19,098 in the 9th term, 5,925 of 5,926 in the 10th. The shortfall sits almost
+entirely in the 8th term, and is characterised rather than mysterious:
+
+- 4,643 gaps reconcile exactly against ballots our own source declared unattributable.
+- 4,983 votes have no counterpart in Parliament's record at all, mostly 8th-term votes
+  whose source identifiers are synthetic and cannot be joined.
+- 3,807 defects sit in Parliament's own documents — results with no identifier,
+  `PersId="UNKNOWN"`, counts replaced by headings — and are reported as EP-side.
+
+Votes that do not verify are excluded from every published figure, and each published
+vote carries its own status, so nothing rests on an unverified ballot.
+
+An earlier sampling check covered four sittings and found all 628 votes in agreement.
+It gave us confidence in the approach, and full-corpus verification then replaced it —
+sampling catches systematic mis-parsing well and sparse errors poorly.
 
 This is the check that matters most, because it is the only one that does not rely on
 the source vouching for itself.

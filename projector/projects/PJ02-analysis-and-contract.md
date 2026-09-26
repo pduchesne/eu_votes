@@ -1,7 +1,7 @@
 ---
 id: PJ02-analysis-and-contract
 title: Analysis & Published-Data Contract
-status: planning
+status: done
 members:
   - UC03.02-mine-and-publish
   - CMP-MINING
@@ -56,4 +56,36 @@ the time this milestone first publishes anything. `TK12` (licensing) belongs her
 the same reason — it constrains what the published bundles may contain and under what
 terms.
 
-No deadline set yet.
+## Delivered (2026-09-26)
+`python -m pipeline all` now runs fetch → term8 → etl → validate → archive → verify →
+mine → publish, and emits the `IF-PUBLISHED-DATA` bundles:
+
+| Bundle | Size | Contents |
+|---|---|---|
+| `meps.json` | 558 KB | 1,279+ MEPs: groups, terms, loyalty, 3D positions |
+| `groups.json` | 4 KB | per-term group cohesion, all votes and main votes |
+| `topics.json` | 15 KB | per-topic group support, from EP subject codes |
+| `votes-t8/9/10.json` | 4.9 / 8.4 / 2.6 MB | per-vote record, EP citation, verification flag |
+| `meta.json` | 2 KB | provenance, verification coverage, caveats |
+
+Three terms (2014-2029), 36,490 votes, 25.2M ballots. 577 EP roll-call documents
+archived; 30,414 votes (83.3%) verified against Parliament's own record, and figures
+are built from verified ballots only.
+
+Both decisions this milestone owed are taken:
+1. **Cross-term comparability** — per-term PCA fits rotated into one frame by
+   orthogonal Procrustes on shared MEPs (307 for T8, 337 for T10), with T9 as reference
+   since it is the only term overlapping both others. A joint fit was rejected: the
+   vote sets are disjoint, so the leading component would merely encode which term.
+2. **The published contract** — frozen as the bundles above. `PJ03` builds against it.
+
+Analysis sanity, which matters more than the pipeline running: results are politically
+recognisable. Mainstream groups sit at 94-96% cohesion, non-attached members at 66%,
+and PC1 orders ESN/PFE/ECR → EPP → RENEW → S&D/Greens — the EP's documented
+pro/anti-integration axis, recovered rather than imposed.
+
+Carried into `PJ03`: `TK11`'s UI half (linking each vote to Parliament's record and
+marking unverified ones), and the wording discipline that participation figures are
+*roll-call* participation, since Parliament does not publish non-voting at all.
+
+No deadline was set.

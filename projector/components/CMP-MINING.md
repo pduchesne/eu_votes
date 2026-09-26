@@ -1,7 +1,7 @@
 ---
 id: CMP-MINING
 title: Mining Pipeline
-status: planned
+status: done
 node: Platform
 uses:
   IF-DATASTORE: read normalized MEPs, votes, and ballots to compute the analysis layer

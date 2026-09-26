@@ -1,7 +1,7 @@
 ---
 id: CMP-PUBLISH
 title: Publish Bundles
-status: planned
+status: done
 node: Platform
 uses:
   IF-DATASTORE: read the normalized store for artifacts that need raw-vote context

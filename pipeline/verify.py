@@ -41,6 +41,13 @@ def _iter_results(path: Path):
             element.clear()
 
 
+def _pers_id(member) -> str | None:
+    """Parliament occasionally records `PersId="UNKNOWN"` for a member it could not
+    identify. That is not an id, so it is treated as absent rather than parsed."""
+    pers = member.attrib.get("PersId")
+    return pers if pers and pers.isdigit() else None
+
+
 def learn_bridge(paths: list[Path]) -> dict[str, str]:
     bridge = {}
     for path in paths:
@@ -49,31 +56,40 @@ def learn_bridge(paths: list[Path]) -> dict[str, str]:
                 if _tag(section) in POSITIONS:
                     for group in section:
                         for member in group:
-                            pers = member.attrib.get("PersId")
+                            pers = _pers_id(member)
                             if pers:
                                 bridge[member.attrib["MepId"]] = pers
     return bridge
 
 
 def _parse(path: Path, bridge: dict[str, str]):
+    """Returns (votes, unjoinable). Some results carry no `Identifier` attribute at
+    all, so there is nothing to join them to; they are counted, not guessed at."""
+    votes, unjoinable = [], 0
     for result in _iter_results(path):
-        ballots, declared, unbridged = {}, {}, 0
+        ballots, declared = {}, {}
         for section in result:
             position = POSITIONS.get(_tag(section))
             if position is None:
                 continue
             raw = section.attrib.get("Number", "")
             declared[position] = int(raw) if raw.isdigit() else None
-            ids = set()
+            ids, unresolved = set(), 0
             for group in section:
                 for member in group:
-                    pers = member.attrib.get("PersId") or bridge.get(member.attrib["MepId"])
+                    pers = _pers_id(member) or bridge.get(member.attrib.get("MepId", ""))
                     if pers is None:
-                        unbridged += 1
+                        unresolved += 1
                     else:
                         ids.add(int(pers))
-            ballots[position] = ids
-        yield int(result.attrib["Identifier"]), declared, ballots, unbridged
+            ballots[position] = (ids, unresolved)
+
+        identifier = result.attrib.get("Identifier", "")
+        if not identifier.lstrip("-").isdigit():
+            unjoinable += 1
+            continue
+        votes.append((int(identifier), declared, ballots))
+    return votes, unjoinable
 
 
 def _store_ballots(con, vote_ids: list[int]) -> dict:
@@ -98,11 +114,18 @@ def verify(data_dir: Path) -> int:
 
     print(f"  learning MepId->PersId bridge from {len(files)} documents")
     bridge = learn_bridge(files)
-    universe = {int(v) for v in bridge.values()}
     print(f"    {len(bridge):,} identifier pairs learned")
 
     con = duckdb.connect(str(data_dir / "eu_votes.duckdb"))
     con.execute("SET enable_progress_bar=false")
+
+    # Ballots our own ingest already declared unattributable. A shortfall of exactly
+    # that size is a known gap, not a disagreement with Parliament.
+    try:
+        known_gap = dict(con.execute("SELECT vote_id, ballots FROM term8_unattributed").fetchall())
+    except Exception:
+        known_gap = {}
+
     con.execute("DROP TABLE IF EXISTS vote_verification")
     con.execute(
         """
@@ -113,30 +136,44 @@ def verify(data_dir: Path) -> int:
         """
     )
 
-    results, discrepancies, anomalies = [], 0, 0
+    results, discrepancies, anomalies, explained = [], 0, 0, 0
     for n, path in enumerate(files, 1):
-        parsed = list(_parse(path, bridge))
-        ours = _store_ballots(con, [vote_id for vote_id, _, _, _ in parsed])
+        parsed, unjoinable = _parse(path, bridge)
+        anomalies += unjoinable
+        ours = _store_ballots(con, [vote_id for vote_id, _, _ in parsed])
 
-        for vote_id, declared, ballots, unbridged in parsed:
+        for vote_id, declared, ballots in parsed:
             stored = ours.get(vote_id)
             if stored is None:
                 results.append((vote_id, False, False, 0, 0, "vote absent from store"))
                 discrepancies += 1
                 continue
 
-            compared, problems, notes = 0, [], []
-            for position, ep_ballots in ballots.items():
+            compared, unresolved_total, problems, notes = 0, 0, [], []
+            allowance = known_gap.get(vote_id, 0)
+            for position, (ep_ballots, unresolved) in ballots.items():
                 if declared[position] is None:
                     anomalies += 1
                     notes.append(f"{position}: EP count unreadable")
                     continue
                 mine = stored.get(position, set())
-                if unbridged:
-                    mine = mine & universe
-                if mine != ep_ballots:
+                unresolved_total += unresolved
+
+                # Members Parliament lists but we cannot name (older documents carry
+                # no PersId) must not be charged to either side. So the test is:
+                # every EP member we *could* resolve is in our set, and whatever we
+                # hold beyond that is exactly the unresolvable remainder.
+                missing = ep_ballots - mine
+                extra = mine - ep_ballots
+                if len(missing) == allowance and allowance:
+                    notes.append(f"{position}: {allowance} ballot(s) unattributable at ingest")
+                    explained += 1
+                    compared += len(ep_ballots)
+                    continue
+                if missing or len(extra) != unresolved:
                     problems.append(
-                        f"{position}: +{len(mine - ep_ballots)}/-{len(ep_ballots - mine)}"
+                        f"{position}: {len(missing)} missing,"
+                        f" {len(extra)} unmatched vs {unresolved} unresolvable"
                     )
                 compared += len(ep_ballots)
 
@@ -146,9 +183,9 @@ def verify(data_dir: Path) -> int:
                 (
                     vote_id,
                     ok,
-                    bool(unbridged),
+                    bool(unresolved_total),
                     compared,
-                    unbridged,
+                    unresolved_total,
                     "; ".join(problems + notes) or None,
                 )
             )
@@ -177,6 +214,7 @@ def verify(data_dir: Path) -> int:
         "ballots_unverifiable": int(unverifiable or 0),
         "discrepancies": discrepancies,
         "ep_record_anomalies": anomalies,
+        "explained_source_gaps": explained,
     }
     con.execute(
         "INSERT INTO _verification VALUES (?, ?, ?)",
@@ -193,6 +231,8 @@ def verify(data_dir: Path) -> int:
             f"  {summary['votes_partially_covered']:,} votes only partially comparable"
             f" ({summary['ballots_unverifiable']:,} ballots unbridgeable to a known MEP)"
         )
+    if explained:
+        print(f"  {explained:,} gaps explained by ballots our source could not attribute")
     if anomalies:
         print(f"  {anomalies} defects in Parliament's own record, not counted against us")
     if discrepancies:

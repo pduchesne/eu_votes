@@ -1,7 +1,7 @@
 ---
 id: FR01-provenance-chain
 title: End-to-End Provenance & Reproducibility Chain
-status: planned
+status: in-development
 ---
 # FR01 — End-to-End Provenance & Reproducibility Chain
 

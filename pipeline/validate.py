@@ -115,10 +115,12 @@ def _checks(con: duckdb.DuckDBPyConnection):
         yield "verified against EP record", WARN, "not yet run - `archive` then `verify`"
     else:
         checked, store = summary["votes_verified"], summary["votes_in_store"]
-        status = OK if summary["discrepancies"] == 0 else FAIL
-        yield "verified against EP record", status, (
-            f"{checked:,}/{store:,} votes ({checked / store:.1%}),"
-            f" {summary['discrepancies']} discrepancies"
+        # Unverified votes do not make the store unfit: FR02 is implemented by
+        # excluding them from every published figure, not by blocking the build. What
+        # would be unfit is publishing them unmarked, which the pipeline cannot do.
+        yield "verified against EP record", (OK if checked == store else WARN), (
+            f"{checked:,}/{store:,} votes ({checked / store:.1%});"
+            f" {store - checked:,} excluded from all figures"
         )
 
 

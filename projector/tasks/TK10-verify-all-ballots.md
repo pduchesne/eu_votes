@@ -1,7 +1,7 @@
 ---
 id: TK10-verify-all-ballots
 title: Verify Every Ballot Against the Archived Record
-status: todo
+status: done
 component: CMP-ETL
 ---
 # TK10 — Verify Every Ballot Against the Archived Record
@@ -27,6 +27,37 @@ What changes at full scale:
   not, and why.
 - **Failure must block.** A discrepancy should stop the affected figures being
   published, not merely log a warning.
+
+## Outcome (2026-09-26)
+Whole-corpus verification, superseding TK06's 2.5% sample.
+
+| Term | Checked | Verified | Unverified |
+|---|---|---|---|
+| T8 | 6,375 | 5,398 | 977 |
+| T9 | 19,098 | 19,091 | 7 |
+| T10 | 5,926 | 5,925 | 1 |
+
+**30,414 of 36,490 votes (83.3%) verified against Parliament's own record.** The two
+terms with complete metadata are 99.96%+ clean; the shortfall is concentrated in the
+8th term and is characterised rather than mysterious.
+
+Three distinctions the checker now draws, each of which changes the number materially:
+- **Members Parliament lists but we cannot name** (older documents carry no `PersId`)
+  are charged to neither side. An earlier version intersected our ballots with the
+  bridge's range instead, which manufactured ~150 phantom T9 discrepancies — the fix
+  came from checking one flagged vote by hand and finding Parliament's record agreed
+  with us exactly.
+- **Gaps our own ingest already declared** are matched against a per-vote record of
+  what parltrack could not attribute. 4,643 gaps reconcile exactly this way, which is
+  the difference between "5,620 discrepancies" and a quantified source limitation.
+- **Defects in Parliament's own record** — 3,807 of them, including results with no
+  identifier and `PersId="UNKNOWN"` — are reported as EP-side, never charged to us.
+
+4,983 votes in the store have no counterpart in the archived record at all (mostly 8th
+term votes whose source identifiers are synthetic). They count as unverified.
+
+Per FR02, unverified votes are excluded from every published figure: mining draws only
+on verified ballots, and each published vote carries its own status.
 
 ## Acceptance criteria
 - Every ballot in the store is compared against the archived EP record, or explicitly
