@@ -13,6 +13,7 @@
     <a href="#/landscape" data-view="landscape">Political landscape</a>
     <a href="#/meps" data-view="meps">Members</a>
     <a href="#/topics" data-view="topics">Topics</a>
+    <a href="#/stories" data-view="stories">Stories</a>
     <a href="#/methodology" data-view="methodology">How this is made</a>
   </nav>
 </header>
@@ -76,6 +77,17 @@
       <label>Term <select id="topics-term"></select></label>
     </div>
     <div id="topics-table"></div>
+  </section>
+
+  <section id="view-stories" hidden>
+    <h1>Stories</h1>
+    <p class="lede">
+      Written by people, about what the votes show. Every number in them is computed from
+      the verified record at publish time — but the readings between the numbers are
+      arguments, and they are marked as such.
+    </p>
+    <div id="story-list" class="cards"></div>
+    <article id="story-body" class="story" hidden></article>
   </section>
 
   <section id="view-methodology" hidden>

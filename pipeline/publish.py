@@ -165,6 +165,13 @@ def publish(data_dir: Path) -> None:
             row["source"] = document_url(term, row["date"])
         _write(out, f"votes-t{term}.json", rows)
 
+    from .stories import collect
+
+    print("    stories:")
+    stories = collect(data_dir, Path("stories"))
+    if stories:
+        _write(out, "stories.json", stories)
+
     source = json.loads(
         con.execute("SELECT source FROM _provenance LIMIT 1").fetchone()[0]
     )

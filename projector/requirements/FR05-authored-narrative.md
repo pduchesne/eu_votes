@@ -1,7 +1,7 @@
 ---
 id: FR05-authored-narrative
 title: Authored Narrative, Visibly Distinct From Computation
-status: planned
+status: in-development
 ---
 # FR05 — Authored Narrative, Visibly Distinct From Computation
 

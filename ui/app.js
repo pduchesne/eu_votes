@@ -16,7 +16,7 @@ const GROUP_COLOUR = {
 };
 const FALLBACK = [150, 150, 150];
 
-const state = { meta: null, meps: [], groups: [], topics: [], votes: {}, term: null, deck: null };
+const state = { meta: null, meps: [], groups: [], topics: [], stories: [], votes: {}, term: null, deck: null };
 
 const $ = (id) => document.getElementById(id);
 const pct = (v) => (v == null ? "—" : `${(v * 100).toFixed(1)}%`);
@@ -34,6 +34,8 @@ async function boot() {
       ["meta.json", "meps.json", "groups.json", "topics.json"].map(load)
     );
     Object.assign(state, { meta, meps, groups, topics });
+    // Stories are optional: a deployment with none should still work.
+    state.stories = await load("stories.json").catch(() => []);
     state.term = Math.max(...meta.terms);
   } catch (error) {
     $("loading").textContent =
@@ -46,13 +48,14 @@ async function boot() {
   initLandscape();
   initMeps();
   initTopics();
+  renderStoryList();
   window.addEventListener("hashchange", route);
   route();
 }
 
 function route() {
   const view = (location.hash.replace("#/", "") || "landscape").split("/")[0];
-  const known = ["landscape", "meps", "topics", "methodology"];
+  const known = ["landscape", "meps", "topics", "stories", "methodology"];
   const active = known.includes(view) ? view : "landscape";
   known.forEach((name) => ($(`view-${name}`).hidden = name !== active));
   document.querySelectorAll("nav a").forEach((a) =>
@@ -251,6 +254,71 @@ function renderTopics() {
     ${basis === "all votes"
       ? "This term's source carries no flag separating substantive votes from amendments, so its figures cover all roll-call votes and are not directly comparable with the other terms."
       : ""}</p>`;
+}
+
+// ---------------------------------------------------------------- stories
+
+const escape = (s) =>
+  String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+function formatFigure(figure) {
+  if (figure.format === "percent") return pct(figure.value);
+  if (figure.format === "count") return num(figure.value);
+  return escape(figure.value);
+}
+
+// A deliberately small markdown subset. Anything richer would mean a dependency, and
+// stories are written in-repo by the project rather than submitted by readers.
+function renderProse(body, figures) {
+  return escape(body)
+    .split(/\n{2,}/)
+    .map((block) => {
+      const withFigures = block.replace(/\{\{([a-z0-9_]+)\}\}/g, (_, name) => {
+        const figure = figures[name];
+        if (!figure) return "—";
+        // The tooltip carries what the number is counted over, so a reader can see the
+        // basis of any figure without leaving the prose.
+        return `<span class="figure" title="computed from ${escape(figure.basis)}">${formatFigure(figure)}</span>`;
+      });
+      const inline = withFigures
+        .replace(/\*\*(.+?)\*\*/g, "<b>$1</b>")
+        .replace(/\[(.+?)\]\((https?:[^)]+)\)/g, '<a href="$2">$1</a>');
+      if (inline.startsWith("## ")) return `<h2>${inline.slice(3)}</h2>`;
+      return `<p>${inline.replace(/\n/g, " ")}</p>`;
+    })
+    .join("");
+}
+
+function renderStoryList() {
+  if (!state.stories.length) {
+    $("story-list").innerHTML = `<p class="note">No stories published yet.</p>`;
+    return;
+  }
+  $("story-list").innerHTML = state.stories
+    .map(
+      (story) => `<button class="card story-card" data-slug="${story.slug}">
+        <span class="who">${escape(story.title)}</span>
+        <span class="meta">${escape(story.author)} · ${escape(story.date)}</span>
+      </button>`
+    )
+    .join("");
+  $("story-list").querySelectorAll(".card").forEach((card) =>
+    card.addEventListener("click", () => showStory(card.dataset.slug))
+  );
+  if (state.stories.length === 1) showStory(state.stories[0].slug);
+}
+
+function showStory(slug) {
+  const story = state.stories.find((s) => s.slug === slug);
+  if (!story) return;
+  const body = $("story-body");
+  body.hidden = false;
+  body.innerHTML = `
+    <h2 style="margin-top:0;font-size:1.35rem">${escape(story.title)}</h2>
+    <p class="byline">Written by <b>${escape(story.author)}</b> on ${escape(story.date)}.
+      Figures in <span class="figure">this style</span> are computed from the verified
+      record; the rest is argument.</p>
+    ${renderProse(story.body, story.figures)}`;
 }
 
 // ---------------------------------------------------------------- landscape

@@ -133,3 +133,24 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 footer { border-top: 1px solid var(--line); margin-top: 2.5rem; padding: 1rem 1.5rem; }
 footer p { max-width: 80ch; margin: 0 auto; font-size: 0.8rem; color: var(--muted); }
 a { color: var(--accent); }
+
+/* Authored content is deliberately set apart from computed output: a reader should
+   never have to work out whether they are looking at a measurement or an argument. */
+.story {
+  border: 1px solid var(--line); border-left: 3px solid var(--accent);
+  border-radius: var(--radius); background: var(--panel);
+  padding: 1.2rem 1.4rem; margin-top: 1rem; max-width: 70ch;
+}
+.story h2 { font-size: 1.05rem; margin: 1.4rem 0 0.3rem; }
+.story p { margin: 0 0 0.9rem; }
+.story .byline {
+  font-size: 0.82rem; color: var(--muted);
+  border-bottom: 1px solid var(--line); padding-bottom: 0.6rem; margin-bottom: 1rem;
+}
+.story .byline b { color: var(--ink); }
+.figure {
+  font-variant-numeric: tabular-nums; font-weight: 650;
+  border-bottom: 1px dotted var(--accent); cursor: help; white-space: nowrap;
+}
+.story-card { display: block; }
+.story-card .who { font-size: 1rem; }

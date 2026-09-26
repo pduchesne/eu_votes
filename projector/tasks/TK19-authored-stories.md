@@ -1,7 +1,7 @@
 ---
 id: TK19-authored-stories
 title: Authored Stories as Versioned Content
-status: todo
+status: done
 component: CMP-PUBLISH
 ---
 # TK19 — Authored Stories as Versioned Content
@@ -32,6 +32,30 @@ verification work built. That credibility is only warranted for claims traceable
 Parliament's record. So: every vote a story names links to the EP document, every figure
 it quotes is generated, and the reader can always see where the measurement ends and the
 argument begins.
+
+## Outcome (2026-09-27)
+Stories live in `stories/` as markdown with front matter, are published into
+`IF-PUBLISHED-DATA` by `pipeline/stories.py`, and render in the site's Stories view.
+
+The mechanism that matters: **a story never contains its own numbers.** Figures are
+declared in front matter as structured specifications — never SQL, so an author cannot
+reach past the published data — resolved against the verified store at publish time, and
+substituted into the prose on render. A story citing an undeclared figure fails the
+build rather than showing a reader a raw token.
+
+Each rendered figure carries what it was counted over ("computed from 27 votes"), so the
+basis of any number is visible without leaving the prose.
+
+The first story, on asylum votes in the 9th term, exists partly to prove the mechanism
+and partly because the data had something genuinely non-obvious in it: support came from
+the centre (S&D and Renew both 92.6%, EPP 85.2%) while opposition came from *both* ends —
+ECR 29.6% and ID 25.9%, but also the Left at 48.1% and the Greens at 59.3%. All ten
+figures were cross-checked against independent queries before the story was written.
+
+That story also demonstrates the boundary this requirement exists to protect: the
+numbers are computed, and the reading — that a vote against a text can oppose its
+existence or its inadequacy, and a roll-call record cannot tell them apart — is argument,
+marked as such and attributed.
 
 ## Acceptance criteria
 - A story attaches to a vote, topic or term and renders with author and date.

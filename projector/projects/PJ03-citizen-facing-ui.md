@@ -49,7 +49,8 @@ bundles directly, so deploying it is copying a directory.
 |---|---|---|
 | Political landscape | `UC02` | Done — deck.gl point cloud, orbit/zoom, colour by group or country, highlight a group, click through to a member. Below it, the votes that most define each axis. |
 | Members | `UC01` | Done — search by name, country or group; per-term participation and group loyalty. |
-| Topics | `UC04` | Partial — a subject-by-group support table, not yet the curated narrative stories `SC04` describes. |
+| Stories | `UC04.02` | Done — authored prose with generated figures, visibly distinct from computed output |
+| Topics | `UC04.01` | Partial — a subject-by-group support table, not yet the curated narrative stories `SC04` describes. |
 | How this is made | `UC05` | Done — provenance, verification coverage, how positions are computed, and what the figures are not. |
 
 Verified in a browser rather than assumed: the landscape renders 738 members for the
@@ -66,9 +67,8 @@ non-attached members scattered between. Console is clean.
   rest of the site still works.
 
 ### Outstanding
-- `UC04.02` authored stories: nothing of the sort exists yet. The 2019 version had
-  real editorial writing and the rewrite lost it, which `FR03`'s parity measures did not
-  catch because they counted computed things only (`FR05`, `TK19`).
+- More stories. The mechanism is built and one story is published; the editorial
+  judgement about which votes matter is the part a pipeline cannot supply.
 - `UC04.01` topic exploration now depends on `PJ05` deriving usable semantics; the
   current table is built on Parliament's partial subject tags.
 - No per-vote browser: votes appear only where the axes name them.
