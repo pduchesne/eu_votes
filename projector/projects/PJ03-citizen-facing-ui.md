@@ -5,7 +5,9 @@ status: in-progress
 members:
   - UC01-lookup-mep
   - UC02-explore-political-landscape
-  - UC04-browse-stories
+  - UC04.02-authored-stories
+  - FR05-authored-narrative
+  - TK19-authored-stories
   - UC05-inspect-methodology
   - CMP-UI
   - CMP-UI-3DVIEW
@@ -64,8 +66,11 @@ non-attached members scattered between. Console is clean.
   rest of the site still works.
 
 ### Outstanding
-- `UC04` narrative stories: the topics table answers "how did each group vote on this
-  subject", but not "here is what happened on migration, told as a story".
+- `UC04.02` authored stories: nothing of the sort exists yet. The 2019 version had
+  real editorial writing and the rewrite lost it, which `FR03`'s parity measures did not
+  catch because they counted computed things only (`FR05`, `TK19`).
+- `UC04.01` topic exploration now depends on `PJ05` deriving usable semantics; the
+  current table is built on Parliament's partial subject tags.
 - No per-vote browser: votes appear only where the axes name them.
 - Not deployed anywhere; `TK12`'s attribution requirements are documented but not yet
   rendered in the footer.

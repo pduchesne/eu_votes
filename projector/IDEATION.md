@@ -34,3 +34,10 @@ replaces. The 2014-2019 term is covered by both the original 2019 analysis and t
 current pipeline, making it the one place parity can be measured rather than asserted —
 see [FR03 — No Regression Against the 2019 Analysis](requirements/FR03-term8-parity.md)
 and its milestone [PJ04](projects/PJ04-term8-parity.md).
+
+A third, and the one most easily blurred: **what a vote is about is computed; what a
+vote meant is written by someone.** Deriving subject matter from the corpus
+([FR04](requirements/FR04-topic-semantics.md), [PJ05](projects/PJ05-topic-semantics.md))
+and authoring narrative about it
+([FR05](requirements/FR05-authored-narrative.md)) are separate capabilities with
+separate failure modes, and a reader must be able to tell which they are looking at.
