@@ -1,7 +1,7 @@
 ---
 id: TK08-retire-legacy-pipeline
 title: Retire the Legacy Pipeline and Decide the 2014-2019 Data's Fate
-status: todo
+status: done
 ---
 # TK08 — Retire the Legacy Pipeline and Decide the 2014-2019 Data's Fate
 
@@ -38,6 +38,27 @@ history without agreement.
 
 Leaving both pipelines alive is the outcome to avoid — it invites someone running the
 stale one and publishing 2019 figures as current.
+
+## Decisions taken (2026-09-26)
+
+**The 2014-2019 term is being brought into the new pipeline**, not dropped — see
+`TK13`. Parltrack supplies it: rejected in `TK01` on freshness, which is a property
+that only matters for a live term, and this one closed in 2019.
+
+**The legacy files moved to `attic/`**, where they remain tracked in git rather than
+deleted, with `attic/README.md` recording why each is unsafe to run. Note the original
+intent was for `/attic` to be gitignored; because the files were already tracked, `git
+mv` preserved them as renames, so history follows them and they stay visible. The
+`/attic` entry was therefore removed from `.gitignore`, since an ignore rule over
+tracked content is only confusing.
+
+Moved: the five notebooks, `eu_utils.py`, `jupyter_utils.py`, `custom_template.tpl`,
+`d3_utils.js`, the old root `requirements.txt` (it described the 2019 stack), plus
+`computed/`, `output/` and `viz_tests/`.
+
+**Repo weight was left alone.** The ~77MB of CSV and HTML remains in git history; the
+move renames blobs rather than adding them. Rewriting history to reclaim that space was
+considered and rejected as not worth rewriting shared history for.
 
 ## Acceptance criteria
 - A recorded decision on the 2014-2019 data, with rationale.

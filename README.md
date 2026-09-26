@@ -1,66 +1,75 @@
 # EU Parliament votes
 
-Fetches European Parliament roll-call votes, normalizes them, and (in progress) mines
-them to show how MEPs and political groups actually vote.
+Fetches European Parliament roll-call votes, normalizes them, mines them for how MEPs
+and political groups actually vote, and publishes the result as data a dashboard can
+consume.
 
-Where the data comes from, what was rejected and why: [docs/data-source.md](docs/data-source.md).
-Project plan, architecture and milestones: [`projector/`](projector/).
+- **Parliament is the reference of record.** Every ballot is verified against the EP's
+  own roll-call XML, and every published vote cites the document it came from.
+- Where the data comes from, and what was rejected: [docs/data-source.md](docs/data-source.md)
+- What we may republish and what we owe: [docs/licensing.md](docs/licensing.md)
+- Plan, architecture and milestones: [`projector/`](projector/)
 
-## Pipeline
+## Setup
 
-Requires Python 3.12+ and a virtualenv:
+Python 3.12+:
 
 ```
 $> python3 -m venv venv
 $> ./venv/bin/pip install -r pipeline/requirements.txt
+$> ./venv/bin/playwright install chromium     # needed by the `archive` stage
 ```
 
-Run the whole thing, or any stage on its own:
+## Pipeline
 
 ```
-$> ./venv/bin/python -m pipeline all        # fetch + etl + validate
-$> ./venv/bin/python -m pipeline fetch      # download a source release
-$> ./venv/bin/python -m pipeline etl        # load into data/eu_votes.duckdb
-$> ./venv/bin/python -m pipeline validate   # sanity-check the store
+$> ./venv/bin/python -m pipeline all
 ```
 
-A further check compares the store against Parliament's own roll-call XML, which is
-the only check that doesn't rely on the data source vouching for itself:
+Or any stage on its own, in order:
 
-```
-$> ./venv/bin/python -m pipeline spotcheck  # needs XML in data/spotcheck/
-```
+| Stage | What it does |
+|---|---|
+| `fetch` | Download a source release (terms 9-10) and pin its tag |
+| `term8` | Ingest the 2014-2019 term from its separate source |
+| `etl` | Load everything into `data/eu_votes.duckdb` |
+| `validate` | Sanity-check the store against seat counts and published tallies |
+| `archive` | Download Parliament's roll-call XML for every sitting |
+| `verify` | Compare every ballot against that archive |
+| `mine` | PCA positions, group cohesion, topics |
+| `publish` | Emit the JSON bundles the UI consumes |
 
-It currently passes on 628 votes across four sittings with no discrepancies. Obtaining
-those XML files needs a browser: they are public, but sit behind an AWS WAF JavaScript
-challenge that returns an empty `HTTP 202` to curl. See
-[docs/data-source.md](docs/data-source.md).
-
-`fetch` defaults to the latest weekly source release and records which one it used.
-To reproduce an earlier build, pin the release explicitly — `latest` moves every week:
+`fetch` defaults to the latest weekly release and records which one it used. Pin it to
+reproduce an earlier build, since `latest` moves every week:
 
 ```
 $> ./venv/bin/python -m pipeline fetch --tag 2026-09-26
 ```
 
-Everything lands under `data/` (gitignored): raw release files with a `provenance.json`
-recording the release tag, per-file checksums and the script commit, and the normalized
-DuckDB store built from them.
+Everything lands under `data/` (gitignored): raw releases with a `provenance.json`
+recording release tag, checksums and the script commit; the DuckDB store; the archived
+EP record; and the published bundles.
 
-The store currently holds 25,204 roll-call votes and 17.9M individual ballots covering
-the 9th term (2019-2024) and the 10th (2024- ) to date. `validate` checks it against
-known seat counts and the source's own published tallies, and exits non-zero on any
-violation.
+### A note on `archive`
 
-## Legacy (2014-2019)
+Parliament's roll-call documents are public and need no account, but sit behind an AWS
+WAF JavaScript challenge — plain HTTP clients get an empty `HTTP 202` that looks
+exactly like the file not existing. The stage drives headless Chromium to solve the
+challenge, then reuses the resulting short-lived token for as many sittings as it
+lasts. It is incremental and append-only: these documents never change once published,
+so a re-run fetches only what is missing.
 
-The notebooks in the repository root (`FinalResults.ipynb`, `DataMining.ipynb`,
-`ep_*_extract.ipynb`), `eu_utils.py`, `computed/`, `output/` and `viz_tests/` are the
-original 2019 analysis of the 2014-2019 term. They are superseded by the pipeline above
-and are **not** maintained — `ep_meps_extract.ipynb` is Python 2 and no longer runs at
-all, and the old `requirements.txt` describes that stack rather than this one.
+## What's in the store
 
-Their fate is an open decision tracked in
-[`TK08`](projector/tasks/TK08-retire-legacy-pipeline.md): the 2014-2019 term is not
-available from the current data source, so keeping that history would mean maintaining
-a second source.
+Roll-call votes and individual ballots for the 8th (2014-2019), 9th (2019-2024) and
+10th (2024- ) terms, with MEPs reconciled to a single identity across all three.
+
+Terms are not equivalent, and the pipeline does not pretend otherwise: the 8th term
+comes from a different source that records only MEPs who actually voted, carries no
+main-vote flag and no subject tags. Those fields are NULL for that term rather than
+guessed, and figures derived from them cover 2019 onwards only.
+
+## Legacy
+
+The original 2019 analysis of the 2014-2019 term lives in [`attic/`](attic/) —
+retained for reference, not maintained, and not runnable. See `attic/README.md`.

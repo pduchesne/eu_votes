@@ -2,7 +2,6 @@
 /venv3
 .ipynb_checkpoints
 /tmp
-/attic
 *.iml
 /data
 __pycache__/

@@ -1,15 +1,16 @@
+import json
 from pathlib import Path
 
 import duckdb
 
-# Official maximum seats per term. T9 ran at 751 until the UK's departure in early
-# 2020, then 705; T10 at 720. A vote recording more ballots than there are seats means
-# the parse is wrong.
-SEATS = {9: 751, 10: 720}
+# Official maximum seats per term. T8 and T9 ran at 751 (T9 dropping to 705 after the
+# UK's departure in early 2020); T10 at 720. A vote recording more ballots than there
+# are seats means the parse is wrong.
+SEATS = {8: 751, 9: 751, 10: 720}
 BREXIT = "2020-02-01"
 POSITIONS = ("FOR", "AGAINST", "ABSTENTION", "DID_NOT_VOTE")
 
-FAIL, WARN, OK, MANUAL = "FAIL", "WARN", "ok", "MANUAL"
+FAIL, WARN, OK = "FAIL", "WARN", "ok"
 
 
 def _checks(con: duckdb.DuckDBPyConnection):
@@ -25,7 +26,7 @@ def _checks(con: duckdb.DuckDBPyConnection):
     n = one("SELECT count(*) FROM votes v WHERE NOT EXISTS (SELECT 1 FROM member_votes mv WHERE mv.vote_id=v.id)")
     yield "every vote has ballots", (OK if n == 0 else FAIL), f"{n:,} empty votes"
 
-    bad = one(f"""
+    tally_sql = """
         SELECT count(*) FROM votes v JOIN (
             SELECT vote_id,
                    count(*) FILTER (WHERE position='FOR') f,
@@ -33,10 +34,32 @@ def _checks(con: duckdb.DuckDBPyConnection):
                    count(*) FILTER (WHERE position='ABSTENTION') ab,
                    count(*) FILTER (WHERE position='DID_NOT_VOTE') dnv
             FROM member_votes GROUP BY vote_id) b ON b.vote_id=v.id
-        WHERE v.count_for<>b.f OR v.count_against<>b.a
-           OR v.count_abstention<>b.ab OR v.count_did_not_vote<>b.dnv
+        WHERE v.term {term_filter} AND (v.count_for<>b.f OR v.count_against<>b.a
+           OR v.count_abstention<>b.ab OR v.count_did_not_vote<>b.dnv)
+    """
+    bad = one(tally_sql.format(term_filter="<> 8"))
+    yield "counted ballots match published tallies (T9/T10)", (OK if bad == 0 else FAIL), f"{bad:,} votes disagree"
+
+    # Term 8's source sometimes cannot attribute a ballot to an MEP, recording an
+    # `obscure_id` placeholder instead. Those ballots are excluded, so its listed
+    # members fall slightly short of its own declared totals. That is a known,
+    # measured property of the source rather than a parse error, so it is reported as
+    # a magnitude instead of failing the build.
+    gap = one("""
+        SELECT coalesce(sum((v.count_for - b.f) + (v.count_against - b.a)
+                            + (v.count_abstention - b.ab)), 0)
+        FROM votes v JOIN (
+            SELECT vote_id,
+                   count(*) FILTER (WHERE position='FOR') f,
+                   count(*) FILTER (WHERE position='AGAINST') a,
+                   count(*) FILTER (WHERE position='ABSTENTION') ab
+            FROM member_votes GROUP BY vote_id) b ON b.vote_id=v.id
+        WHERE v.term = 8
     """)
-    yield "counted ballots match published tallies", (OK if bad == 0 else FAIL), f"{bad:,} votes disagree"
+    t8_ballots = one("SELECT count(*) FROM member_votes mv JOIN votes v ON v.id=mv.vote_id WHERE v.term=8")
+    yield "T8 ballots attributable to an MEP", (OK if gap == 0 else WARN), (
+        f"{gap:,} of {t8_ballots + gap:,} unattributable ({gap / (t8_ballots + gap):.2%})"
+    )
 
     unknown = q(f"SELECT DISTINCT position FROM member_votes WHERE position NOT IN {POSITIONS}")
     yield "ballot positions in known domain", (OK if not unknown else FAIL), f"{[u[0] for u in unknown]}"
@@ -57,7 +80,11 @@ def _checks(con: duckdb.DuckDBPyConnection):
         JOIN votes v ON v.id=b.vote_id GROUP BY v.term ORDER BY v.term
     """):
         seats = SEATS.get(term)
-        status = OK if seats and lo >= 0.85 * seats and hi <= seats else FAIL
+        # Term 8's source records only MEPs who actually voted - there are no
+        # DID_NOT_VOTE rows - so its ballot counts are legitimately far below the
+        # roster and only the upper bound is meaningful.
+        floor = 0 if term == 8 else 0.85 * seats
+        status = OK if seats and lo >= floor and hi <= seats else FAIL
         yield f"T{term} ballots per vote within roster", status, f"{lo}-{hi} (median {med:.0f}, {seats} seats)"
 
     n = one(f"""
@@ -78,11 +105,21 @@ def _checks(con: duckdb.DuckDBPyConnection):
     total = one("SELECT count(*) FROM member_votes")
     yield "ballots with a political group", (OK if n == 0 else WARN), f"{n:,} of {total:,} lack one"
 
-    yield (
-        "spot-check against EP roll-call record",
-        MANUAL,
-        "per term, against europarl.europa.eu plenary minutes RCV XML",
-    )
+    # Superseded TK06's manual sampling: `verify` now compares the whole corpus
+    # against Parliament's archived record (FR02).
+    try:
+        summary = json.loads(
+            con.execute("SELECT summary FROM _verification ORDER BY checked_at DESC LIMIT 1").fetchone()[0]
+        )
+    except Exception:
+        yield "verified against EP record", WARN, "not yet run - `archive` then `verify`"
+    else:
+        checked, store = summary["votes_verified"], summary["votes_in_store"]
+        status = OK if summary["discrepancies"] == 0 else FAIL
+        yield "verified against EP record", status, (
+            f"{checked:,}/{store:,} votes ({checked / store:.1%}),"
+            f" {summary['discrepancies']} discrepancies"
+        )
 
 
 def validate(data_dir: Path) -> int:
@@ -101,5 +138,5 @@ def validate(data_dir: Path) -> int:
     if failures:
         print(f"\n  {failures} check(s) FAILED — the store is not fit to publish from")
     else:
-        print("\n  all automated checks passed; the MANUAL check is still owed (TK06)")
+        print("\n  all checks passed")
     return failures

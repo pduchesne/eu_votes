@@ -32,6 +32,7 @@ specific: Parliament publishes only ballots. Titles, procedures, topics and
 | **Data we ingest** | The [HowTheyVote.eu dataset](https://github.com/HowTheyVote/data), weekly CSV releases |
 | **Licence** | Open Database License (ODbL) |
 | **Coverage** | 9th term onwards (2019-07-15 →), 25,204 roll-call votes, 1,279 MEPs |
+| **2014-2019 (8th term)** | [Parltrack](https://parltrack.org/dumps/), a separate ingest — see below |
 | **Primary record we verify against** | The European Parliament's own roll-call XML, published per sitting in the plenary minutes |
 
 We deliberately ingest a third-party derivation rather than the Parliament's own API.
@@ -76,8 +77,8 @@ Rejected on freshness. At the time of checking, `ep_votes.json.zst` was last mod
 calling it current.
 
 Parltrack remains relevant for one thing: it covers terms before 2019, which
-HowTheyVote does not. If the 2014-2019 term is ever brought back in (`TK08`), this is
-where it would come from.
+HowTheyVote does not. That is exactly what it is now used for — see *The 2014-2019
+term* below.
 
 ### 3. HowTheyVote.eu — **selected**
 
@@ -110,11 +111,15 @@ means any figure we publish can cite the exact release it came from.
 
 ## Verification
 
-`python -m pipeline spotcheck` compares our store against Parliament's own roll-call
-XML. Across four sittings — 2019-10-10 and 2020-01-15 (pre-Brexit), 2023-11-22
-(post-Brexit) and 2026-09-17 (current term) — **all 628 votes agree, with no
-discrepancies.** On the two sittings whose XML identifies members in a form we can
-match, every individual ballot agrees too, not merely the totals.
+`python -m pipeline archive` keeps Parliament's roll-call XML for every sitting, and
+`python -m pipeline verify` compares our ballots against it — the whole corpus, not a
+sample. A vote whose ballots disagree blocks publication rather than being logged and
+passed over.
+
+An earlier sampling check covered four sittings (2019-10-10, 2020-01-15, 2023-11-22,
+2026-09-17) and found all 628 votes in agreement. That gave us confidence in the
+approach; full-corpus verification replaced it, because sampling catches systematic
+mis-parsing well and sparse errors poorly.
 
 This is the check that matters most, because it is the only one that does not rely on
 the source vouching for itself.
@@ -140,12 +145,37 @@ These are properties of the data, and they apply no matter how careful the code 
 2. **Roll-call votes only.** Votes taken by show of hands or by secret ballot are not
    recorded per-MEP by anyone, the Parliament included. Any statement we make about an
    MEP's record is a statement about their *roll-call* record, and should say so.
-3. **History starts in 2019.** The 8th term (2014-2019) is out of scope, and the
-   analysis this repository previously published covered exactly that term — so the
-   old published figures are not comparable to the new ones.
+3. **The 8th term is not equivalent to the others.** It comes from a different source
+   (see below) that records only MEPs who actually voted, and carries no main-vote flag
+   and no subject tags. Any figure involving participation, substantive-vote filtering
+   or topics covers 2019 onwards only.
 4. **Amendment votes dominate by count.** 90% of rows are amendment or procedural
    votes. Any aggregate computed without regard to `is_main` is dominated by
    procedural noise rather than substantive positions.
+
+## The 2014-2019 term, and why Parltrack after all
+
+Parltrack was rejected above on freshness — its votes dump ran months behind. That
+objection is specific to *live* data: the 8th term closed in 2019, so its record is
+static and lag is meaningless. It is therefore the ingest path for that term only.
+
+Identity reconciles without heuristics: Parltrack's `UserID`/`mepid` is Parliament's
+own MEP identifier, the same one used throughout this project, so an MEP serving in
+both the 8th and 9th terms is a single person in the store.
+
+What that term cannot carry, recorded as NULLs rather than guesses:
+
+- **No "did not vote" records** — only MEPs who voted are listed, so participation
+  cannot be computed as it is for later terms.
+- **No main-vote flag**, so substantive votes cannot be separated from amendments.
+- **No EuroVoc or OEIL subject tags**, so topic-based views do not reach it.
+- **Weaker verification.** Parliament's roll-call XML from that era carries only an
+  internal identifier with no `PersId` to join on, so ballot-level checking depends on
+  a bridge that cannot reach MEPs who left before the schema changed. Tally-level
+  verification still applies in full.
+
+4,408 of its votes carry non-numeric identifiers in the dump; rather than drop them
+they are given deterministic ids that cannot collide with real ones.
 
 ## Reproducing the ingest
 

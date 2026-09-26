@@ -14,6 +14,7 @@ members:
   - TK10-verify-all-ballots
   - TK12-review-data-licensing
   - TK08-retire-legacy-pipeline
+  - TK13-ingest-term-8
 ---
 # PJ02 — Analysis & Published-Data Contract
 
@@ -38,6 +39,10 @@ Two decisions land here:
 2. **The published contract itself** — once `PJ03` builds against it, changing its
    shape costs UI rework, so it is worth stabilising deliberately at the end of this
    milestone.
+
+`TK13` brings the 2014-2019 term into the pipeline from a second source, following the
+decision recorded in `TK08`. It lands in this milestone because the mining and
+published contract must be shaped for three terms from the start rather than retrofitted.
 
 `TK08` (retiring the legacy pipeline) sits here rather than in `PJ01`, because until
 this milestone publishes something, the old static report is the only output the

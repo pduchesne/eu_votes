@@ -9,8 +9,8 @@ def main() -> None:
     )
     parser.add_argument(
         "stage",
-        choices=["fetch", "etl", "validate", "spotcheck", "all"],
-        help="pipeline stage to run ('spotcheck' needs roll-call XML in data/spotcheck/)",
+        choices=["fetch", "etl", "term8", "validate", "archive", "verify", "mine", "publish", "all"],
+        help="pipeline stage to run",
     )
     parser.add_argument(
         "--tag",
@@ -18,6 +18,9 @@ def main() -> None:
         "Required to reproduce a past build, since 'latest' moves weekly.",
     )
     parser.add_argument("--data-dir", type=Path, default=Path("data"))
+    parser.add_argument(
+        "--limit", type=int, help="archive: stop after this many sittings"
+    )
     args = parser.parse_args()
 
     if args.stage in ("fetch", "all"):
@@ -32,6 +35,12 @@ def main() -> None:
         print("etl:")
         load(args.data_dir)
 
+    if args.stage in ("term8", "all"):
+        from .term8 import ingest
+
+        print("term8:")
+        ingest(args.data_dir)
+
     if args.stage in ("validate", "all"):
         from .validate import validate
 
@@ -39,11 +48,30 @@ def main() -> None:
         if validate(args.data_dir):
             raise SystemExit(1)
 
-    if args.stage == "spotcheck":
-        from .spotcheck import spotcheck
+    if args.stage in ("archive", "all"):
+        from .archive import archive
 
-        print("spotcheck:")
-        raise SystemExit(1 if spotcheck(args.data_dir) else 0)
+        print("archive:")
+        archive(args.data_dir, args.limit)
+
+    if args.stage in ("verify", "all"):
+        from .verify import verify
+
+        print("verify:")
+        if verify(args.data_dir):
+            raise SystemExit(1)
+
+    if args.stage in ("mine", "all"):
+        from .mining import mine
+
+        print("mine:")
+        mine(args.data_dir)
+
+    if args.stage in ("publish", "all"):
+        from .publish import publish
+
+        print("publish:")
+        publish(args.data_dir)
 
 
 if __name__ == "__main__":
