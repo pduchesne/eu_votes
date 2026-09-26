@@ -14,8 +14,10 @@ artifact that exists.
 **The 2014-2019 data.** It is the only data currently in the repo, but it is two terms
 stale and sits outside `PJ01`'s scope (current + previous term). Decide whether to:
 - re-extract it through the new pipeline, giving three terms and making genuine
-  trend storytelling possible (`SC04`), at the cost of the cross-term PCA comparability
-  problem noted in `TK07` applying across a wider span; or
+  trend storytelling possible (`SC04`) — but note `TK01`'s finding that the selected
+  source starts at 2019, so this means adopting and maintaining a *second* source
+  (parltrack) purely for the 8th term, on top of the cross-term PCA comparability
+  problem from `TK07`; or
 - drop it, accepting that the published history starts at 2019.
 
 This is a product decision about what stories the project wants to tell, not a

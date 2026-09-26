@@ -8,38 +8,45 @@ component: CMP-ETL
 
 ## Scope
 Decide and implement how the normalized store (`IF-DATASTORE`) represents terms and MEP
-identity. This gates `TK03`: it is a schema decision, and schema decisions are
-expensive to revisit once two terms of data and downstream mining depend on them.
+identity. Gates `TK03`, because schema decisions are expensive to revisit once two
+terms of data and downstream mining depend on them.
 
-The old code never faced this — it handled a single term with a flat "current group"
-per MEP and time slices within that term. Holding two terms at once breaks those
-assumptions:
+`TK01` removed much of the difficulty that was anticipated here. The selected source
+already provides, verified against a real release:
+- a single stable `member_id` spanning both terms (1,279 MEPs in one table), so a
+  person serving twice is already one person;
+- `group_memberships` with `term`, `start_date`, `end_date`, so affiliation is a
+  time-bounded fact rather than the flattened `current_group` the old pipeline stored;
+- `group_code` and `country_code` denormalized onto each ballot, i.e. affiliation
+  as-at the vote is available without a join.
 
-- **Term as a first-class dimension.** Votes and rosters must be term-scoped so the two
-  terms coexist without collision.
-- **MEP identity across terms.** Verify whether MEP identifiers are stable across
-  terms, and model an MEP serving in multiple terms as one person with multiple
-  mandates — not two unrelated rows — otherwise per-person history is impossible.
-- **Mid-term roster changes.** MEPs arrive and leave mid-term (resignations,
-  replacements, deaths). The 2019-2024 term also contains the UK's departure and the
-  resulting seat redistribution, so "the roster" is not constant within that term.
-  Group affiliation also changes mid-term, which the old single `current_group` field
-  simply flattened away — losing the ability to say who an MEP sat with at the time of
-  a given vote.
-- **Attendance denominators.** With a changing roster, "votes an MEP could have voted
-  in" is per-mandate, not per-term. Getting this wrong quietly distorts every
-  attendance and cohesion figure.
+### What still needs deciding
+- **Term as a store dimension.** The source keys votes by timestamp, not term. Derive
+  term explicitly (T9 begins 2019-07-02, T10 begins 2024-07-16) so per-term queries
+  don't rely on every caller re-deriving date arithmetic.
+- **Mandates.** `group_memberships` gives group spells, but an MEP's *mandate* (when
+  they actually sat) is a distinct fact — and this term's roster is not constant:
+  members resign and are replaced mid-term. Decide whether mandate is modelled
+  explicitly or inferred from first/last observed ballot.
+- **Attendance denominators.** "Votes an MEP could have voted in" must be computed per
+  mandate, not per term, or every attendance and cohesion figure is distorted for
+  anyone who did not serve the full five years. `DID_NOT_VOTE` rows help but do not
+  settle it: an MEP absent from the file entirely for a sitting is different from one
+  recorded as not voting.
+- **The UK's departure.** Term 9 contains pre- and post-Brexit rosters (verified:
+  `GBR` ballots are present in the data). Any per-country or per-term aggregate must
+  handle a membership that changes size mid-term.
 
 ### Downstream consequence to flag, not solve here
 PCA axes from independently-fitted per-term models are not comparable: sign and
 rotation are arbitrary, so "moved left between terms" is meaningless without an
 explicit alignment choice (joint fit across terms, or per-term fit plus Procrustes
-alignment). That decision belongs to `CMP-MINING`, but it constrains what the store must
-retain — so record the requirement here and decide it before mining is built.
+alignment). That decision belongs to `CMP-MINING` in `PJ02`, but it constrains what the
+store must retain — so record it here and settle it before mining is built.
 
 ## Acceptance criteria
-- Store schema documents how terms, MEPs, mandates, and group affiliations over time are
+- Store schema documents how terms, MEPs, mandates, and group affiliation over time are
   represented.
-- An MEP serving in both in-scope terms resolves to a single person with two mandates.
 - Group affiliation is resolvable as-at the date of any given vote.
 - Attendance denominators are computable per mandate, not per term.
+- Term is an explicit, queryable column rather than derived ad hoc by each caller.

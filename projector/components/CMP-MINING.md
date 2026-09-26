@@ -16,13 +16,19 @@ versioned functions; notebooks remain acceptable for exploration only, not as th
 pipeline itself.
 
 ### Technology
-Python, scikit-learn (PCA retained); topic classification via EP policy-area metadata
-where available, else lightweight NLP/embedding clustering on vote titles/reports.
+Python, scikit-learn (PCA retained). Topic classification uses the EuroVoc and
+Legislative Observatory subject tags that `IF-RAW-SOURCE` already carries per vote
+(`eurovoc_concept_votes`, `oeil_subject_votes`) — authoritative labels from the
+Parliament itself, rather than topics we infer. NLP/embedding clustering is a
+fallback for gaps, not the primary mechanism.
 
 ### Responsibilities
 - Compute PCA components per time slice (as `eu_utils.compute_pcas` does today).
 - Compute a per-MEP group-cohesion / loyalty score.
 - Classify votes into topics to support UC04.
+- Respect the `is_main` distinction: 90% of rows are amendment/procedural votes, so any
+  aggregate computed over all votes indiscriminately measures procedural noise rather
+  than substantive position. The original notebooks did exactly that.
 - Be callable as a scripted step producing deterministic, versioned output for
   CMP-PUBLISH.
 

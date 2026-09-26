@@ -1,10 +1,34 @@
 ---
 id: TK01-identify-document-raw-source
 title: Select and Document the Raw EP Data Source
-status: todo
+status: done
 component: CMP-FETCH
 ---
 # TK01 — Select and Document the Raw EP Data Source
+
+## Outcome (2026-09-26)
+**Selected: the HowTheyVote.eu dataset** (weekly ODbL CSV releases), with the EP's own
+DOCEO roll-call XML as the primary record for verification. Full comparison and
+rationale: `docs/data-source.md`; source contract: `IF-RAW-SOURCE`.
+
+The decisive finding: **the official EP Open Data API exposes only aggregate vote
+tallies, not individual ballots** — so the authoritative-source-first instinct does not
+survive contact with what the API actually serves. Individual ballots are published by
+the Parliament only as XML attached to each sitting's minutes. Parltrack was rejected
+on freshness (votes dump six months stale at time of checking, versus HowTheyVote's
+weekly cadence).
+
+Consequences recorded against other tasks:
+- `TK02` shrinks to downloading stable-link CSVs and pinning a release tag — no
+  paginated API harvest.
+- `TK07` shrinks substantially: the source already carries term-scoped group
+  memberships with start/end dates, and a single stable `member_id` across terms.
+- `CMP-MINING`'s topic classification is largely pre-solved by the EuroVoc and OEIL
+  subject tables (see `PJ02`).
+- `TK08`'s "keep 2014-2019" option now carries a real cost: that term is not in this
+  source and would require a second one (parltrack).
+- `TK06` matters more, not less: we ingest a third-party derivation whose authors
+  state it is automated and may contain errors.
 
 ## Scope
 This is a fork in the road, not a formality: the chosen source determines whether
