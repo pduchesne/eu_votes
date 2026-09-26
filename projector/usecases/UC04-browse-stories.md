@@ -9,6 +9,7 @@ requires:
   - CMP-PUBLISH
   - CMP-UI
   - IF-PUBLISHED-DATA
+  - FR03-term8-parity
 ---
 # UC04 — Browse Topic Stories
 

@@ -28,3 +28,9 @@ computed) must be transparent and reproducible by others.
 Transparency and reproducibility apply across all scenarios rather than belonging to
 one: see [FR01 — End-to-End Provenance & Reproducibility Chain](requirements/FR01-provenance-chain.md)
 and [UC05 — Inspect Data Provenance and Methodology](usecases/UC05-inspect-methodology.md).
+
+A second cross-cutting commitment: the rewrite must not deliver less than what it
+replaces. The 2014-2019 term is covered by both the original 2019 analysis and the
+current pipeline, making it the one place parity can be measured rather than asserted —
+see [FR03 — No Regression Against the 2019 Analysis](requirements/FR03-term8-parity.md)
+and its milestone [PJ04](projects/PJ04-term8-parity.md).

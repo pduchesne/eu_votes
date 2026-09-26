@@ -84,6 +84,12 @@ recognisable. Mainstream groups sit at 94-96% cohesion, non-attached members at 
 and PC1 orders ESN/PFE/ECR → EPP → RENEW → S&D/Greens — the EP's documented
 pro/anti-integration axis, recovered rather than imposed.
 
+Discovered after this milestone closed, and tracked in `PJ04-term8-parity`: on the 8th
+term — the only term the original 2019 analysis also covered — this pipeline currently
+analyses 5,398 votes against its 10,227, carries fewer MEP attributes, and computes no
+per-vote component coefficients. The figures published here are sound but rest on less
+evidence than the work they replace.
+
 Carried into `PJ03`: `TK11`'s UI half (linking each vote to Parliament's record and
 marking unverified ones), and the wording discipline that participation figures are
 *roll-call* participation, since Parliament does not publish non-voting at all.

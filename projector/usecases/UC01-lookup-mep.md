@@ -8,6 +8,7 @@ requires:
   - CMP-PUBLISH
   - CMP-UI
   - IF-PUBLISHED-DATA
+  - FR03-term8-parity
 ---
 # UC01 — Look Up MEP Voting Record
 

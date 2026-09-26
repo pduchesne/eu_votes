@@ -8,6 +8,7 @@ requires:
   - CMP-PUBLISH
   - CMP-UI-3DVIEW
   - IF-PUBLISHED-DATA
+  - FR03-term8-parity
 ---
 # UC02 — Explore Political Landscape in 3D
 
