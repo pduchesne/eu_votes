@@ -11,6 +11,8 @@ members:
   - CMP-UI-3DVIEW
   - IF-PUBLISHED-DATA
   - FR01-provenance-chain
+  - FR02-primary-record-verification
+  - TK11-cite-ep-source-per-vote
 ---
 # PJ03 — Citizen-Facing UI
 

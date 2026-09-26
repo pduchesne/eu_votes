@@ -8,6 +8,7 @@ requires:
   - CMP-UI
   - IF-PUBLISHED-DATA
   - FR01-provenance-chain
+  - FR02-primary-record-verification
 ---
 # UC05 — Inspect Data Provenance and Methodology
 

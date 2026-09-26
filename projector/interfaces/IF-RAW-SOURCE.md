@@ -11,16 +11,24 @@ The external source of raw MEP and roll-call ballot data consumed by `CMP-FETCH`
 Selected in `TK01` after comparing three candidates; see `docs/data-source.md` for the
 full comparison and rationale.
 
-**Selected: the HowTheyVote.eu dataset** — weekly CSV releases published at
+The platform runs a **two-tier posture**, decided 2026-09-26 (see
+`FR02-primary-record-verification`): ingest and authority are deliberately separated.
+
+**Ingest path: the HowTheyVote.eu dataset** — weekly CSV releases published at
 `https://github.com/HowTheyVote/data/releases`, under the Open Database License
 (ODbL), derived by HowTheyVote from the EP's own plenary minutes and Legislative
-Observatory.
+Observatory. Chosen for convenience and completeness, and treated as replaceable
+rather than authoritative.
 
-**Primary record for verification: the EP's DOCEO roll-call XML**, published per
+**Reference of record: europarl.europa.eu** — the DOCEO roll-call XML published per
 sitting as part of the plenary minutes
-(`europarl.europa.eu/doceo/document/PV-{term}-{date}-RCV_EN.xml`). Because the selected
-source is a third-party derivation, `TK06` spot-checks published figures against this
-primary record.
+(`europarl.europa.eu/doceo/document/PV-{term}-{date}-RCV_EN.xml`). This is what the
+platform cites to citizens, what every ballot is verified against (`TK09`, `TK10`),
+and what each published vote links to (`TK11`).
+
+Retrieval note: these documents are public and need no account, but sit behind an AWS
+WAF JavaScript challenge that returns an empty `HTTP 202` to plain HTTP clients. A
+browser passes it and yields a short-lived `aws-waf-token` reusable by `curl`.
 
 ### Key capabilities / Conformance classes
 Verified directly against the 2026-09-26 release:

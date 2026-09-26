@@ -9,6 +9,10 @@ members:
   - CMP-ORCH
   - IF-PUBLISHED-DATA
   - FR01-provenance-chain
+  - FR02-primary-record-verification
+  - TK09-archive-ep-rollcall-record
+  - TK10-verify-all-ballots
+  - TK12-review-data-licensing
   - TK08-retire-legacy-pipeline
 ---
 # PJ02 — Analysis & Published-Data Contract
@@ -38,5 +42,13 @@ Two decisions land here:
 `TK08` (retiring the legacy pipeline) sits here rather than in `PJ01`, because until
 this milestone publishes something, the old static report is the only output the
 project has.
+
+`TK09`/`TK10` (archiving Parliament's roll-call record and verifying every ballot
+against it) also sit here rather than in `PJ01`, even though they are data-layer work.
+The reason is sequencing, not category: `FR02` requires that a figure cannot be
+published unless its ballots are verified, so full verification has to be in place by
+the time this milestone first publishes anything. `TK12` (licensing) belongs here for
+the same reason — it constrains what the published bundles may contain and under what
+terms.
 
 No deadline set yet.

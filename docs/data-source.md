@@ -6,6 +6,25 @@ data comes from, what was considered and rejected, and what the known limits are
 
 Decision date: 2026-09-26. Task: `projector/tasks/TK01-identify-document-raw-source.md`.
 
+## The posture
+
+**Parliament is the reference of record. HowTheyVote is the ingest path.** These are
+deliberately separate decisions.
+
+What that means in practice: every figure this platform publishes is checked against
+Parliament's own roll-call record and cites the EP document it came from. The
+third-party dataset we load is a convenience — verified, and replaceable — not the
+authority we ask anyone to trust.
+
+The reasoning is that credibility comes from verifiability, not from provenance alone.
+A pipeline that ingests a derivation and continuously proves it matches Parliament is
+more trustworthy than one that ingests primary data and never checks itself: the first
+has an error-detection mechanism, the second only has a better story.
+
+The honest limit of that claim is stated under *Verification* below, and it is
+specific: Parliament publishes only ballots. Titles, procedures, topics and
+"did not vote" come from elsewhere or are derived, and cannot be verified this way.
+
 ## The short version
 
 | | |
