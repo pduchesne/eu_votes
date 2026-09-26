@@ -1,0 +1,86 @@
+<mxfile host="Electron">
+  <diagram name="Architecture Overview" id="arch-overview">
+    <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1654" pageHeight="1169" background="#ffffff" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="__cube__Platform" placeholders="1" parent="1" style="shape=cube;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;darkOpacity=0.05;darkOpacity2=0.1;size=20;direction=south;fillColor=#9DD485;strokeColor=#2D7600;fontColor=#000000;verticalAlign=bottom;align=left;spacingLeft=5;" value="Platform" vertex="1">
+          <mxGeometry x="40" y="40" width="357" height="379" as="geometry"/>
+        </mxCell>
+        <mxCell id="__cube__Browser" placeholders="1" parent="1" style="shape=cube;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;darkOpacity=0.05;darkOpacity2=0.1;size=20;direction=south;fillColor=#9DD485;strokeColor=#2D7600;fontColor=#000000;verticalAlign=bottom;align=left;spacingLeft=5;" value="Browser" vertex="1">
+          <mxGeometry x="497" y="40" width="264" height="195" as="geometry"/>
+        </mxCell>
+        <object label="&lt;b&gt;%id%&lt;/b&gt;&lt;br&gt;Normalize &amp; Load" placeholders="1" id="CMP-ETL">
+          <mxCell parent="1" style="html=1;outlineConnect=0;whiteSpace=wrap;fillColor=#99ffff;shape=mxgraph.archimate3.application;appType=comp;archiType=square;fontColor=#000000;labelBorderColor=none;textShadow=1;strokeColor=#000000;verticalAlign=top;align=left;spacingLeft=5;" vertex="1">
+            <mxGeometry x="81" y="80" width="150" height="60" as="geometry"/>
+          </mxCell>
+        </object>
+        <object label="&lt;b&gt;%id%&lt;/b&gt;&lt;br&gt;Raw Data Fetcher" placeholders="1" id="CMP-FETCH">
+          <mxCell parent="1" style="html=1;outlineConnect=0;whiteSpace=wrap;fillColor=#99ffff;shape=mxgraph.archimate3.application;appType=comp;archiType=square;fontColor=#000000;labelBorderColor=none;textShadow=1;strokeColor=#000000;verticalAlign=top;align=left;spacingLeft=5;" vertex="1">
+            <mxGeometry x="81" y="155" width="150" height="60" as="geometry"/>
+          </mxCell>
+        </object>
+        <object label="&lt;b&gt;%id%&lt;/b&gt;&lt;br&gt;Mining Pipeline" placeholders="1" id="CMP-MINING">
+          <mxCell parent="1" style="html=1;outlineConnect=0;whiteSpace=wrap;fillColor=#99ffff;shape=mxgraph.archimate3.application;appType=comp;archiType=square;fontColor=#000000;labelBorderColor=none;textShadow=1;strokeColor=#000000;verticalAlign=top;align=left;spacingLeft=5;" vertex="1">
+            <mxGeometry x="81" y="230" width="150" height="60" as="geometry"/>
+          </mxCell>
+        </object>
+        <object label="&lt;b&gt;%id%&lt;/b&gt;&lt;br&gt;Publish Bundles" placeholders="1" id="CMP-PUBLISH">
+          <mxCell parent="1" style="html=1;outlineConnect=0;whiteSpace=wrap;fillColor=#99ffff;shape=mxgraph.archimate3.application;appType=comp;archiType=square;fontColor=#000000;labelBorderColor=none;textShadow=1;strokeColor=#000000;verticalAlign=top;align=left;spacingLeft=5;" vertex="1">
+            <mxGeometry x="81" y="305" width="150" height="94" as="geometry"/>
+          </mxCell>
+        </object>
+        <object label="&lt;b&gt;%id%&lt;/b&gt;&lt;br&gt;3D Political Landscape View" placeholders="1" id="CMP-UI-3DVIEW">
+          <mxCell parent="1" style="html=1;outlineConnect=0;whiteSpace=wrap;fillColor=#99ffff;shape=mxgraph.archimate3.application;appType=comp;archiType=square;fontColor=#000000;labelBorderColor=none;textShadow=1;strokeColor=#000000;verticalAlign=top;align=left;spacingLeft=5;" vertex="1">
+            <mxGeometry x="538" y="80" width="202" height="60" as="geometry"/>
+          </mxCell>
+        </object>
+        <object label="&lt;b&gt;%id%&lt;/b&gt;&lt;br&gt;Dashboard Shell" placeholders="1" id="CMP-UI">
+          <mxCell parent="1" style="html=1;outlineConnect=0;whiteSpace=wrap;fillColor=#99ffff;shape=mxgraph.archimate3.application;appType=comp;archiType=square;fontColor=#000000;labelBorderColor=none;textShadow=1;strokeColor=#000000;verticalAlign=top;align=left;spacingLeft=5;" vertex="1">
+            <mxGeometry x="538" y="155" width="202" height="60" as="geometry"/>
+          </mxCell>
+        </object>
+        <object label="&lt;b&gt;%id%&lt;/b&gt;&lt;br&gt;Published Data Bundle" placeholders="1" id="IF-PUBLISHED-DATA">
+          <mxCell parent="1" style="html=1;outlineConnect=0;whiteSpace=wrap;fillColor=#99ffff;shape=mxgraph.archimate3.application;appType=interface;archiType=square;fontColor=#000000;strokeColor=#000000;verticalAlign=top;" vertex="1">
+            <mxGeometry x="228" y="339" width="148" height="44" as="geometry"/>
+          </mxCell>
+        </object>
+        <object label="&lt;b&gt;%id%&lt;/b&gt;&lt;br&gt;EP Raw Data Source" placeholders="1" id="IF-RAW-SOURCE">
+          <mxCell parent="1" style="html=1;outlineConnect=0;whiteSpace=wrap;fillColor=#99ffff;shape=mxgraph.archimate3.application;appType=interface;archiType=square;fontColor=#000000;strokeColor=#000000;verticalAlign=top;" vertex="1">
+            <mxGeometry x="40" y="449" width="131" height="44" as="geometry"/>
+          </mxCell>
+        </object>
+        <mxCell id="__uses__CMP-FETCH__IF-RAW-SOURCE" edge="1" source="CMP-FETCH" target="IF-RAW-SOURCE" parent="1" style="edgeStyle=orthogonalEdgeStyle;html=1;dashed=1;dashPattern=6 4;strokeColor=#666666;strokeWidth=1.2;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;endArrow=open;endFill=0;" value="" tooltip="pull raw MEP and vote dumps from the EP data source">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="__uses__CMP-PUBLISH__IF-PUBLISHED-DATA" edge="1" source="CMP-PUBLISH" target="IF-PUBLISHED-DATA" parent="1" style="edgeStyle=orthogonalEdgeStyle;html=1;dashed=1;dashPattern=6 4;strokeColor=#666666;strokeWidth=1.2;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;endArrow=open;endFill=0;" value="" tooltip="emit the sized-for-web JSON bundle consumed by the UI">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        
+        
+        <mxCell id="__uses__CMP-UI-3DVIEW__IF-PUBLISHED-DATA" edge="1" source="CMP-UI-3DVIEW" target="IF-PUBLISHED-DATA" parent="1" style="edgeStyle=orthogonalEdgeStyle;html=1;dashed=1;dashPattern=6 4;strokeColor=#666666;strokeWidth=1.2;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;endArrow=open;endFill=0;" value="" tooltip="read PCA coordinates and MEP metadata to render the point cloud">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="__uses__CMP-UI__IF-PUBLISHED-DATA" edge="1" source="CMP-UI" target="IF-PUBLISHED-DATA" parent="1" style="edgeStyle=orthogonalEdgeStyle;html=1;dashed=1;dashPattern=6 4;strokeColor=#666666;strokeWidth=1.2;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;endArrow=open;endFill=0;" value="" tooltip="read MEP records, topic stories, and provenance for display">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <object label="&lt;b&gt;%id%&lt;/b&gt;&lt;br&gt;Pipeline Orchestrator" placeholders="1" id="CMP-ORCH">
+          <mxCell parent="1" style="html=1;outlineConnect=0;whiteSpace=wrap;fillColor=#99ffff;shape=mxgraph.archimate3.application;appType=comp;archiType=square;fontColor=#000000;labelBorderColor=none;textShadow=1;strokeColor=#000000;verticalAlign=top;align=left;spacingLeft=5;" vertex="1">
+            <mxGeometry x="81" y="305" width="165" height="60" as="geometry"/>
+          </mxCell>
+        </object>
+        <object label="&lt;b&gt;%id%&lt;/b&gt;&lt;br&gt;Normalized Vote Store" placeholders="1" id="IF-DATASTORE">
+          <mxCell parent="1" style="html=1;outlineConnect=0;whiteSpace=wrap;fillColor=#99ffff;shape=mxgraph.archimate3.application;appType=interface;archiType=square;fontColor=#000000;strokeColor=#000000;verticalAlign=top;" vertex="1">
+            <mxGeometry x="228" y="114" width="148" height="44" as="geometry"/>
+          </mxCell>
+        </object>
+        <mxCell id="__uses__CMP-MINING__IF-DATASTORE" edge="1" source="CMP-MINING" target="IF-DATASTORE" parent="1" style="edgeStyle=orthogonalEdgeStyle;html=1;dashed=1;dashPattern=6 4;strokeColor=#666666;strokeWidth=1.2;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;endArrow=open;endFill=0;" value="" tooltip="read normalized MEPs, votes, and ballots to compute the analysis layer">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="__uses__CMP-PUBLISH__IF-DATASTORE" edge="1" source="CMP-PUBLISH" target="IF-DATASTORE" parent="1" style="edgeStyle=orthogonalEdgeStyle;html=1;dashed=1;dashPattern=6 4;strokeColor=#666666;strokeWidth=1.2;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;endArrow=open;endFill=0;" value="" tooltip="read the normalized store for artifacts that need raw-vote context">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
