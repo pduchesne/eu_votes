@@ -34,11 +34,22 @@ def _tag(el) -> str:
 
 
 def _iter_results(path: Path):
-    """Stream RollCallVote.Result elements, discarding each once handled."""
-    for _, element in ET.iterparse(path, events=("end",)):
-        if _tag(element) == "RollCallVote.Result":
+    """Stream RollCallVote.Result elements, releasing each once handled.
+
+    Clearing the element alone is not enough: the root keeps a reference to every child
+    it has seen, so a large document stays resident in full. Detaching handled siblings
+    from the root is what actually bounds memory here.
+    """
+    root = None
+    for event, element in ET.iterparse(path, events=("start", "end")):
+        if root is None:
+            root = element
+            continue
+        if event == "end" and _tag(element) == "RollCallVote.Result":
             yield element
-            element.clear()
+            # Clearing the root releases every sibling parsed so far — the corrections
+            # and glossary blocks in these documents are far larger than the results.
+            root.clear()
 
 
 def _pers_id(member) -> str | None:
@@ -48,9 +59,30 @@ def _pers_id(member) -> str | None:
     return pers if pers and pers.isdigit() else None
 
 
+# `PersId` only appears in documents from 2023 onwards, so only those can teach the
+# bridge. Reading the whole archive to discover that wasted a full pass over 1.7GB.
+BRIDGE_FROM = "2023-01-01"
+BRIDGE_CACHE = "id_bridge.json"
+
+
 def learn_bridge(paths: list[Path]) -> dict[str, str]:
+    """MepId -> PersId, learned from the documents that carry both.
+
+    Cached beside the archive: it only changes when the archive does, and recomputing
+    it meant a second full pass over every document on every run.
+    """
+    archive = paths[0].parent if paths else Path(".")
+    cache = archive / BRIDGE_CACHE
+    teachers = sorted(p for p in paths if p.stem.split("-", 2)[2][:10] >= BRIDGE_FROM)
+    fingerprint = {"documents": len(teachers), "newest": teachers[-1].name if teachers else None}
+
+    if cache.exists():
+        stored = json.loads(cache.read_text())
+        if stored.get("fingerprint") == fingerprint:
+            return stored["bridge"]
+
     bridge = {}
-    for path in paths:
+    for path in teachers:
         for result in _iter_results(path):
             for section in result:
                 if _tag(section) in POSITIONS:
@@ -59,14 +91,16 @@ def learn_bridge(paths: list[Path]) -> dict[str, str]:
                             pers = _pers_id(member)
                             if pers:
                                 bridge[member.attrib["MepId"]] = pers
+    cache.write_text(json.dumps({"fingerprint": fingerprint, "bridge": bridge}) + "\n")
     return bridge
 
 
-def _parse(path: Path, bridge: dict[str, str]):
+def _parse(path: Path, bridge: dict[str, str], mapping: dict | None = None):
     """Returns (votes, unjoinable). Some results carry no `Identifier` attribute at
     all, so there is nothing to join them to; they are counted, not guessed at."""
     votes, unjoinable = [], 0
-    for result in _iter_results(path):
+    sitting = path.stem.split("-", 2)[2].replace("-RCV_EN", "") if mapping else None
+    for index, result in enumerate(_iter_results(path)):
         ballots, declared = {}, {}
         for section in result:
             position = POSITIONS.get(_tag(section))
@@ -84,11 +118,16 @@ def _parse(path: Path, bridge: dict[str, str]):
                         ids.add(int(pers))
             ballots[position] = (ids, unresolved)
 
-        identifier = result.attrib.get("Identifier", "")
-        if not identifier.lstrip("-").isdigit():
-            unjoinable += 1
-            continue
-        votes.append((int(identifier), declared, ballots))
+        # Prefer the reconciled mapping: a third of Parliament's term-8 results carry
+        # no identifier, and were bound to our votes by sitting, tally and ballots.
+        vote_id = (mapping or {}).get((sitting, index))
+        if vote_id is None:
+            identifier = result.attrib.get("Identifier", "")
+            if not identifier.lstrip("-").isdigit():
+                unjoinable += 1
+                continue
+            vote_id = int(identifier)
+        votes.append((vote_id, declared, ballots))
     return votes, unjoinable
 
 
@@ -112,12 +151,14 @@ def verify(data_dir: Path) -> int:
     if not files:
         raise SystemExit("no archived EP record — run `archive` first")
 
-    print(f"  learning MepId->PersId bridge from {len(files)} documents")
+    print("  loading MepId->PersId bridge (from documents that carry both)")
     bridge = learn_bridge(files)
     print(f"    {len(bridge):,} identifier pairs learned")
 
     con = duckdb.connect(str(data_dir / "eu_votes.duckdb"))
     con.execute("SET enable_progress_bar=false")
+    con.execute("SET memory_limit='3GB'")
+    con.execute("CREATE INDEX IF NOT EXISTS idx_member_votes_vote ON member_votes(vote_id)")
 
     # Ballots our own ingest already declared unattributable. A shortfall of exactly
     # that size is a known gap, not a disagreement with Parliament.
@@ -125,6 +166,17 @@ def verify(data_dir: Path) -> int:
         known_gap = dict(con.execute("SELECT vote_id, ballots FROM term8_unattributed").fetchall())
     except Exception:
         known_gap = {}
+
+    try:
+        mapping = {
+            (sitting.isoformat(), index): vote_id
+            for vote_id, sitting, index in con.execute(
+                "SELECT vote_id, sitting, result_index FROM vote_ep_match"
+            ).fetchall()
+        }
+        print(f"    using {len(mapping):,} reconciled vote matches")
+    except Exception:
+        mapping = {}
 
     con.execute("DROP TABLE IF EXISTS vote_verification")
     con.execute(
@@ -138,7 +190,7 @@ def verify(data_dir: Path) -> int:
 
     results, discrepancies, anomalies, explained = [], 0, 0, 0
     for n, path in enumerate(files, 1):
-        parsed, unjoinable = _parse(path, bridge)
+        parsed, unjoinable = _parse(path, bridge, mapping)
         anomalies += unjoinable
         ours = _store_ballots(con, [vote_id for vote_id, _, _ in parsed])
 
@@ -151,6 +203,8 @@ def verify(data_dir: Path) -> int:
 
             compared, unresolved_total, problems, notes = 0, 0, [], []
             allowance = known_gap.get(vote_id, 0)
+            shortfall = surplus = 0
+
             for position, (ep_ballots, unresolved) in ballots.items():
                 if declared[position] is None:
                     anomalies += 1
@@ -158,24 +212,28 @@ def verify(data_dir: Path) -> int:
                     continue
                 mine = stored.get(position, set())
                 unresolved_total += unresolved
-
-                # Members Parliament lists but we cannot name (older documents carry
-                # no PersId) must not be charged to either side. So the test is:
-                # every EP member we *could* resolve is in our set, and whatever we
-                # hold beyond that is exactly the unresolvable remainder.
-                missing = ep_ballots - mine
-                extra = mine - ep_ballots
-                if len(missing) == allowance and allowance:
-                    notes.append(f"{position}: {allowance} ballot(s) unattributable at ingest")
-                    explained += 1
-                    compared += len(ep_ballots)
-                    continue
-                if missing or len(extra) != unresolved:
-                    problems.append(
-                        f"{position}: {len(missing)} missing,"
-                        f" {len(extra)} unmatched vs {unresolved} unresolvable"
-                    )
                 compared += len(ep_ballots)
+
+                # Members Parliament lists but we cannot name are charged to neither
+                # side; what we hold beyond the ones we could name should be exactly
+                # that unresolvable remainder.
+                missing = ep_ballots - mine
+                extra = len(mine - ep_ballots)
+                shortfall += len(missing) + max(0, unresolved - extra)
+                surplus += max(0, extra - unresolved)
+                if missing:
+                    notes.append(f"{position}: {len(missing)} named member(s) absent from our record")
+
+            # The verdict is per vote, not per position: a ballot our source could not
+            # attribute is missing from one position only, while the allowance is
+            # recorded for the vote as a whole.
+            if surplus:
+                problems.append(f"{surplus} ballot(s) we hold that Parliament does not list")
+            elif shortfall > allowance:
+                problems.append(f"{shortfall} ballot(s) short, {allowance} explained by ingest")
+            elif shortfall:
+                explained += 1
+                notes.append(f"{shortfall} ballot(s) unattributable at ingest")
 
             ok = not problems
             discrepancies += 0 if ok else 1

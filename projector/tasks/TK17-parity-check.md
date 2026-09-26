@@ -1,7 +1,7 @@
 ---
 id: TK17-parity-check
 title: Automated Parity Check Against the 2019 Baseline
-status: todo
+status: done
 component: CMP-ORCH
 ---
 # TK17 — Automated Parity Check Against the 2019 Baseline
@@ -21,6 +21,20 @@ eventually be pruned, and the baseline should survive that. It is a handful of n
 
 The check belongs with `validate`, reporting a regression as a failure and a genuine
 improvement as an improvement, so the direction of travel is visible in the output.
+
+## Outcome (2026-09-26)
+`pipeline parity` compares against `baseline_2019.json`, derived once from the old
+analysis's own output and committed so the check outlives `attic/`.
+
+It measures **extraction and analysis separately**, because they are different claims
+and the user's requirement named both. Extraction is the like-for-like comparison: the
+old pipeline verified nothing, so its 10,227 votes are ingested votes. Analysis is the
+stricter measure, counting only votes verified against Parliament's record.
+
+One correction during implementation: the MEP-attribute check first compared fill rates
+against a 95% threshold invented on the spot, and failed on email. The old analysis had
+an email for 92% of MEPs, because Parliament does not publish one for every MEP. The
+baseline now records its actual per-field fill rates, and parity compares like with like.
 
 ## Acceptance criteria
 - Baseline fixture committed, with a note recording how it was derived from `attic/`.

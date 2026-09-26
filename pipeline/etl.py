@@ -54,6 +54,10 @@ def load(data_dir: Path, release: Path | None = None) -> Path:
         n = con.execute(f"SELECT count(*) FROM {table}").fetchone()[0]
         print(f"  {table}: {n:,} rows")
 
+    # Verification and reconciliation look ballots up per sitting, hundreds of times.
+    # Without this each lookup scans all 25M rows, which is what exhausted memory.
+    con.execute("CREATE INDEX IF NOT EXISTS idx_member_votes_vote ON member_votes(vote_id)")
+
     con.execute("CREATE TABLE terms (term INTEGER, start_date DATE, end_date DATE)")
     for term, start, end in TERMS:
         con.execute("INSERT INTO terms VALUES (?, ?, ?)", [term, start, end])

@@ -31,7 +31,14 @@ def _measure(con, term: int) -> dict:
                JOIN vote_verification ver ON ver.vote_id = v.id AND ver.verified
                WHERE v.term = ?"""
         ),
-        "votes_held": one("SELECT count(*) FROM votes WHERE term = ?"),
+        # Extracted: what we hold as distinct real votes, duplicates excluded. This is
+        # the like-for-like comparison with the old pipeline, which verified nothing.
+        "votes_extracted": one(
+            """SELECT count(*) FROM votes v WHERE v.term = ?
+               AND NOT EXISTS (SELECT 1 FROM vote_duplicate d WHERE d.vote_id = v.id)"""
+        ) if con.execute(
+            "SELECT count(*) FROM duckdb_tables() WHERE table_name = 'vote_duplicate'"
+        ).fetchone()[0] else one("SELECT count(*) FROM votes WHERE term = ?"),
         "meps_with_positions": one("SELECT count(*) FROM mep_positions WHERE term = ?"),
         "vote_component_coefficients": one(
             """SELECT count(DISTINCT vc.vote_id) FROM vote_components vc
@@ -65,6 +72,7 @@ def check(data_dir: Path):
 
     con = duckdb.connect(str(data_dir / "eu_votes.duckdb"), read_only=True)
     con.execute("SET enable_progress_bar=false")
+    con.execute("SET memory_limit='3GB'")
     now = _measure(con, term)
     fields = _mep_fields(con, term)
     con.close()
@@ -72,10 +80,17 @@ def check(data_dir: Path):
     # Parity is against the previous analysis; Parliament's own count is the ceiling
     # neither pipeline can exceed, quoted so the gap is legible.
     yield (
+        f"T{term} votes extracted vs 2019 analysis",
+        OK if now["votes_extracted"] >= previous["votes"] else FAIL,
+        f"{now['votes_extracted']:,} vs {previous['votes']:,} (EP record holds {ceiling:,})",
+    )
+    # Analysed is the stricter measure and deliberately stays separate: we only analyse
+    # votes verified against Parliament's record, which the old pipeline never did.
+    yield (
         f"T{term} votes analysed vs 2019 analysis",
         OK if now["votes"] >= previous["votes"] else FAIL,
-        f"{now['votes']:,} vs {previous['votes']:,} (EP record holds {ceiling:,};"
-        f" {now['votes_held']:,} held)",
+        f"{now['votes']:,} vs {previous['votes']:,} (verified against EP record;"
+        f" {now['votes_extracted']:,} extracted)",
     )
     yield (
         f"T{term} MEPs with positions vs 2019 analysis",

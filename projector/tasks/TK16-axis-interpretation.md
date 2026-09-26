@@ -1,7 +1,7 @@
 ---
 id: TK16-axis-interpretation
 title: Compute Per-Vote Component Coefficients and Axis Interpretation
-status: todo
+status: in-progress
 component: CMP-MINING
 ---
 # TK16 — Compute Per-Vote Component Coefficients and Axis Interpretation
@@ -30,6 +30,19 @@ Presentation caveat that belongs with the numbers: a component's sign and rotati
 arbitrary, so a coefficient indicates *how strongly a vote separates MEPs along an
 axis*, never a direction on a left-right scale. Interpretation must be offered as
 "votes that most distinguish this axis", not as a political label we assert.
+
+## Status (2026-09-26)
+Per-vote component coefficients are computed and stored for every analysed term
+(35,128 votes). The PCA already produced them; they were simply being discarded.
+
+They are interpretable, which was the point: T10's first component is defined by
+enlargement reports on Albania and Bosnia, its second by the ECB annual report, CFSP
+implementation and the defence white paper.
+
+Term-8 coefficient count (10,112) is bounded by analysed coverage, not by this task.
+
+**Outstanding:** analysis over an arbitrary date window. The pipeline still fits whole
+terms only, so "how did this group move during the pandemic" remains unanswerable.
 
 ## Acceptance criteria
 - Per-vote component coefficients computed for every analysed term and published.

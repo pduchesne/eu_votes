@@ -9,7 +9,7 @@ def main() -> None:
     )
     parser.add_argument(
         "stage",
-        choices=["fetch", "etl", "term8", "meps", "validate", "archive", "verify", "mine", "parity", "publish", "all"],
+        choices=["fetch", "etl", "term8", "meps", "validate", "archive", "reconcile", "verify", "mine", "parity", "publish", "all"],
         help="pipeline stage to run",
     )
     parser.add_argument(
@@ -59,6 +59,12 @@ def main() -> None:
 
         print("archive:")
         archive(args.data_dir, args.limit)
+
+    if args.stage in ("reconcile", "all"):
+        from .reconcile import reconcile
+
+        print("reconcile:")
+        reconcile(args.data_dir)
 
     if args.stage in ("verify", "all"):
         from .verify import verify

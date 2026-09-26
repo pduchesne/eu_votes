@@ -1,7 +1,7 @@
 ---
 id: TK15-restore-mep-attributes
 title: Restore the Full MEP Attribute Set
-status: todo
+status: done
 component: CMP-ETL
 ---
 # TK15 — Restore the Full MEP Attribute Set
@@ -19,6 +19,15 @@ the primary source. The term-8 ingest simply never read them.
 
 Beyond parity, these fields are what make an MEP page recognisable to a citizen rather
 than a row in a table (`UC01`): a photo, a constituency, a link to their official page.
+
+## Outcome (2026-09-26)
+At parity. 1,811 of 1,812 MEPs enriched from the parltrack dump, which covers every
+term — the primary source for terms 9-10 carries no gender, constituency, photo or
+official page at all, so this became an all-terms step rather than the term-8 one it
+was scoped as. Photo and profile URLs are derived from the member id using
+Parliament's own deterministic pattern rather than scraped.
+
+Fill rates now meet or exceed the 2019 analysis on every field it carried.
 
 ## Acceptance criteria
 - MEP records carry at least the 2019 field set, for every term.

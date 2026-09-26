@@ -42,6 +42,7 @@ def enrich(data_dir: Path) -> None:
     raw = fetch_dumps(data_dir)
     con = duckdb.connect(str(data_dir / "eu_votes.duckdb"))
     con.execute("SET enable_progress_bar=false")
+    con.execute("SET memory_limit='3GB'")
 
     existing = {c[0] for c in con.execute("DESCRIBE members").fetchall()}
     for column, kind in COLUMNS.items():

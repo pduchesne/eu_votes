@@ -189,6 +189,7 @@ def ingest(data_dir: Path) -> None:
 
     con = duckdb.connect(str(data_dir / "eu_votes.duckdb"))
     con.execute("SET enable_progress_bar=false")
+    con.execute("SET memory_limit='3GB'")
     con.execute("DELETE FROM member_votes WHERE vote_id IN (SELECT id FROM votes WHERE term = 8)")
     con.execute("DELETE FROM votes WHERE term = 8")
     con.execute("DELETE FROM group_memberships WHERE term = 8")

@@ -129,6 +129,7 @@ def validate(data_dir: Path) -> int:
     if not db.exists():
         raise SystemExit("no store found — run `etl` first")
     con = duckdb.connect(str(db), read_only=True)
+    con.execute("SET memory_limit='3GB'")
 
     failures = 0
     for name, status, detail in _checks(con):

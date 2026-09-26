@@ -1,7 +1,7 @@
 ---
 id: PJ04-term8-parity
 title: Parity With the 2019 Analysis
-status: planning
+status: in-progress
 members:
   - FR03-term8-parity
   - CMP-ETL
@@ -43,5 +43,35 @@ and topic stories lose the device of naming the specific votes that separate gro
 A constraint worth restating: coverage must be earned by verifying votes against
 Parliament's record, never by relaxing `FR02`. Parity and verification are not in
 tension — the point is to verify more, not to check less.
+
+## Progress (2026-09-26)
+
+| Measure | 2019 analysis | Now | |
+|---|---|---|---|
+| Term-8 votes **extracted** | 10,227 | **10,756** | ahead |
+| Term-8 votes **analysed** (verified) | 10,227 | 10,112 | 115 short |
+| MEPs with positions | 824 | 854 | ahead |
+| Per-vote coefficients | 10,227 | 10,112 | bounded by coverage |
+| MEP attributes | 9 fields | all fields, fill rates met | at parity |
+
+`TK15` and `TK17` are done. `TK14` took analysed coverage from 5,398 to 10,112 and
+`TK16` restored axis interpretation.
+
+The check now measures **extraction and analysis separately**, because they are
+different claims: the old pipeline verified nothing against Parliament's record, so
+its 10,227 are ingested votes, and on that like-for-like basis we are ahead. Analysed
+coverage applies the stricter standard this project chose, and is the one still short.
+
+## What closing the last 115 requires
+Not loosening anything. 644 term-8 votes remain unbound because several votes in the
+same sitting share a tally and ballot agreement cannot separate them safely — a lesson
+learned the hard way, since a looser threshold bound 141 votes to the *wrong*
+same-tally vote before verification caught it. Closing the gap means finding a further
+discriminator (vote order within the sitting, or the description text), not relaxing
+the criterion.
+
+Also outstanding: extracted count exceeds Parliament's own 10,281 by ~475, so more
+duplicate records remain beyond the 530 found. And `TK16` still fits whole terms only,
+so arbitrary date-window analysis is not yet restored.
 
 No deadline set.

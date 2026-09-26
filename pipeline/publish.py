@@ -32,6 +32,7 @@ def _rows(con, sql: str, params=None) -> list[dict]:
 def publish(data_dir: Path) -> None:
     con = duckdb.connect(str(data_dir / "eu_votes.duckdb"), read_only=True)
     con.execute("SET enable_progress_bar=false")
+    con.execute("SET memory_limit='3GB'")
     out = data_dir / "published"
     out.mkdir(parents=True, exist_ok=True)
 
@@ -143,6 +144,7 @@ def publish(data_dir: Path) -> None:
                 LEFT JOIN vote_topics t ON t.vote_id = v.id
                 LEFT JOIN vote_verification ver ON ver.vote_id = v.id
                 WHERE v.term = ?
+                  AND NOT EXISTS (SELECT 1 FROM vote_duplicate d WHERE d.vote_id = v.id)
                 GROUP BY ALL ORDER BY date, v.id
                 """,
                 [term],

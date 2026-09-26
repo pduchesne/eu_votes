@@ -260,6 +260,7 @@ def topics(con) -> None:
 
 def mine(data_dir: Path) -> None:
     con = duckdb.connect(str(data_dir / "eu_votes.duckdb"))
+    con.execute("SET memory_limit='3GB'")
     meta = positions(con)
     cohesion(con)
     topics(con)
