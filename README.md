@@ -24,6 +24,18 @@ $> ./venv/bin/python -m pipeline etl        # load into data/eu_votes.duckdb
 $> ./venv/bin/python -m pipeline validate   # sanity-check the store
 ```
 
+A further check compares the store against Parliament's own roll-call XML, which is
+the only check that doesn't rely on the data source vouching for itself:
+
+```
+$> ./venv/bin/python -m pipeline spotcheck  # needs XML in data/spotcheck/
+```
+
+It currently passes on 628 votes across four sittings with no discrepancies. Obtaining
+those XML files needs a browser: they are public, but sit behind an AWS WAF JavaScript
+challenge that returns an empty `HTTP 202` to curl. See
+[docs/data-source.md](docs/data-source.md).
+
 `fetch` defaults to the latest weekly source release and records which one it used.
 To reproduce an earlier build, pin the release explicitly — `latest` moves every week:
 

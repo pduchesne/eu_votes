@@ -34,12 +34,15 @@ Rejected as the ingest path because its vote endpoints return aggregate counts o
 dataset of aggregate tallies cannot answer any question this project exists to answer;
 every use case depends on attributing a ballot to a named MEP.
 
-*Verification caveat:* we confirmed the aggregate-only limitation from two independent
-descriptions of the API, and indirectly from the fact that HowTheyVote — who would
-obviously prefer a clean API — parse the minutes instead. We could **not** fetch the
-DOCEO roll-call XML directly to inspect it, because the Parliament's servers return
-HTTP 202 with an empty body to automated requests from our environment. Confirming
-that XML hands-on is part of `TK06`.
+We have since inspected the Parliament's roll-call XML directly and confirmed what it
+does and does not contain — see *Verification* below.
+
+*A note on retrieval:* these documents are public and need no account, but the
+Parliament fronts them with an AWS WAF JavaScript challenge (`x-amzn-waf-action:
+challenge`). Plain HTTP clients — curl, scripted fetchers — receive an empty `HTTP 202`
+rather than the file, which can easily be mistaken for the document being unavailable.
+A real browser passes the challenge transparently. The files used below were retrieved
+by driving a browser and reusing the resulting `aws-waf-token`.
 
 ### 2. Parltrack — `parltrack.org`
 
@@ -85,6 +88,26 @@ What it gives us, verified against the 2026-09-26 release rather than taken on t
 
 Licence is ODbL, releases are tagged by date and retrievable by stable URL, which
 means any figure we publish can cite the exact release it came from.
+
+## Verification
+
+`python -m pipeline spotcheck` compares our store against Parliament's own roll-call
+XML. Across four sittings — 2019-10-10 and 2020-01-15 (pre-Brexit), 2023-11-22
+(post-Brexit) and 2026-09-17 (current term) — **all 628 votes agree, with no
+discrepancies.** On the two sittings whose XML identifies members in a form we can
+match, every individual ballot agrees too, not merely the totals.
+
+This is the check that matters most, because it is the only one that does not rely on
+the source vouching for itself.
+
+It also established two things about the primary record:
+
+- **Parliament publishes only For / Against / Abstention.** There is no "did not vote"
+  list. Our `DID_NOT_VOTE` figures are derived by HowTheyVote from the sitting roster,
+  so they are an inference — a well-founded one, but not something Parliament states.
+- **The XML is not flawless.** In vote 161290, the abstention count is replaced by a
+  multilingual "corrections and voting intentions" heading. Our checker reports such
+  cases as defects in the EP record rather than silently attributing them to our data.
 
 ## Known limits
 

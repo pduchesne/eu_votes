@@ -6,3 +6,4 @@
 *.iml
 /data
 __pycache__/
+.playwright-mcp/

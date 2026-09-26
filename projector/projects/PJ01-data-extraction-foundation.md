@@ -1,7 +1,7 @@
 ---
 id: PJ01-data-extraction-foundation
 title: Data Extraction Foundation
-status: in-progress
+status: done
 members:
   - UC03.01-acquire-data
   - CMP-FETCH
@@ -42,4 +42,17 @@ Then `TK02`/`TK03` (build), `TK04`/`TK05` (run for each term), and `TK06` (valid
 — with `TK06` as the actual definition of done for the milestone, since "ready to
 process" is otherwise an untested claim.
 
-No deadline set yet.
+## Delivered (2026-09-26)
+`python -m pipeline fetch|etl|validate|spotcheck|all` produces a provenance-tagged
+DuckDB store holding **25,204 roll-call votes and 17.9M ballots** across T9 and T10.
+
+"Ready to process" is a checked claim, not an assertion: 13 automated checks pass, and
+628 votes across four sittings were verified against Parliament's own roll-call XML
+with zero discrepancies — including every individual ballot on the two sittings whose
+XML permits it.
+
+Carried into `PJ02`: `DID_NOT_VOTE` is derived rather than published, so attendance
+figures must be described as roll-call participation; and 90% of rows are
+amendment/procedural votes, so `is_main` has to be respected in any aggregate.
+
+No deadline was set.

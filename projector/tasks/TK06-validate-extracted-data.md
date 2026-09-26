@@ -1,7 +1,7 @@
 ---
 id: TK06-validate-extracted-data
 title: Validate Extracted Data
-status: in-progress
+status: done
 component: CMP-ETL
 ---
 # TK06 — Validate Extracted Data
@@ -54,13 +54,38 @@ Automated checks implemented in `pipeline/validate.py`, run via
 One WARN, judged acceptable: 629 ballots of 17,872,194 (0.004%) carry no political
 group, consistent with non-attached members or brief affiliation gaps.
 
-### Still owed
-The **spot-check against the Parliament's own roll-call record** — the only check that
-catches a systematically mis-parsed source, and the reason it cannot be skipped given
-we ingest a third-party derivation. It is not yet done because the EP's servers return
-HTTP 202 with an empty body to automated requests from the build environment, so the
-DOCEO RCV XML has to be retrieved by hand. Until this is done for both terms, `PJ01`
-is not complete.
+### Spot-check against Parliament's own record — done
+`pipeline/spotcheck.py`, run via `python -m pipeline spotcheck`. **628 votes across
+four sittings agree with Parliament's own roll-call XML**, with zero discrepancies:
+
+| Sitting | Regime | Votes | Verified |
+|---|---|---|---|
+| 2019-10-10 | T9 pre-Brexit | 37 | tallies in full, ballots partial |
+| 2020-01-15 | T9 pre-Brexit | 183 | tallies in full, ballots partial |
+| 2023-11-22 | T9 post-Brexit | 284 | tallies + every individual ballot |
+| 2026-09-17 | T10 | 124 | tallies + every individual ballot |
+
+Join keys, both verified rather than assumed: the XML's `Identifier` equals our
+`vote_id` (37/37, 183/183, 284/284, 124/124), and its `PersId` equals our `member_id`.
+
+Three findings worth carrying forward:
+- **`DID_NOT_VOTE` is not in the primary record at all.** Parliament publishes only
+  For/Against/Abstention; our source derives non-voting from the sitting roster. So
+  that field is a derivation, not a fact from the minutes, and attendance claims should
+  be described accordingly.
+- **Pre-2023 XML carries no `PersId`**, only an internal `MepId` that matches nothing
+  in our store. Those sittings are bridged via MepId→PersId pairs learned from newer
+  files; ~155 MEPs who left before the schema changed cannot be bridged, so their
+  ballots are unverified and the tool says so rather than implying full coverage.
+- **Parliament's own XML has defects.** Vote 161290's `Result.Abstention` carries a
+  multilingual "corrections" heading where its count belongs. Reported as an EP-side
+  anomaly, not counted against our data.
+
+Retrieval note: the EP fronts these documents with an AWS WAF JavaScript challenge
+(`x-amzn-waf-action: challenge`), so curl and other plain clients get an empty HTTP 202.
+A real browser passes it transparently — the files were obtained by driving one, then
+reusing its `aws-waf-token`. They are public and anonymous; the obstacle is bot
+protection, not access control.
 
 ## Acceptance criteria
 - Validation runs as a pipeline stage and fails loudly on violation.

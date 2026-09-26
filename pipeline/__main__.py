@@ -8,7 +8,9 @@ def main() -> None:
         description="EU Parliament votes pipeline. See docs/data-source.md for provenance.",
     )
     parser.add_argument(
-        "stage", choices=["fetch", "etl", "validate", "all"], help="pipeline stage to run"
+        "stage",
+        choices=["fetch", "etl", "validate", "spotcheck", "all"],
+        help="pipeline stage to run ('spotcheck' needs roll-call XML in data/spotcheck/)",
     )
     parser.add_argument(
         "--tag",
@@ -34,7 +36,14 @@ def main() -> None:
         from .validate import validate
 
         print("validate:")
-        raise SystemExit(1 if validate(args.data_dir) else 0)
+        if validate(args.data_dir):
+            raise SystemExit(1)
+
+    if args.stage == "spotcheck":
+        from .spotcheck import spotcheck
+
+        print("spotcheck:")
+        raise SystemExit(1 if spotcheck(args.data_dir) else 0)
 
 
 if __name__ == "__main__":
