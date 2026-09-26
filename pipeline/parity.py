@@ -40,6 +40,18 @@ def _measure(con, term: int) -> dict:
             "SELECT count(*) FROM duckdb_tables() WHERE table_name = 'vote_duplicate'"
         ).fetchone()[0] else one("SELECT count(*) FROM votes WHERE term = ?"),
         "meps_with_positions": one("SELECT count(*) FROM mep_positions WHERE term = ?"),
+        # Why the analysed figure falls short, taken from the data rather than assumed:
+        # votes our source and Parliament genuinely disagree about, and results in
+        # Parliament's record we hold nothing for.
+        "disagree": one(
+            """SELECT count(*) FROM vote_verification ver JOIN votes v ON v.id = ver.vote_id
+               WHERE v.term = ? AND NOT ver.verified
+                 AND coalesce(ver.note, '') NOT LIKE 'vote absent%'"""
+        ),
+        "absent": one(
+            """SELECT count(*) FROM vote_verification ver JOIN votes v ON v.id = ver.vote_id
+               WHERE v.term = ? AND coalesce(ver.note, '') LIKE 'vote absent%'"""
+        ),
         "vote_component_coefficients": one(
             """SELECT count(DISTINCT vc.vote_id) FROM vote_components vc
                JOIN votes v ON v.id = vc.vote_id WHERE v.term = ?"""
@@ -89,8 +101,8 @@ def check(data_dir: Path):
     yield (
         f"T{term} votes analysed vs 2019 analysis",
         OK if now["votes"] >= previous["votes"] else FAIL,
-        f"{now['votes']:,} vs {previous['votes']:,} (verified against EP record;"
-        f" {now['votes_extracted']:,} extracted)",
+        f"{now['votes']:,} vs {previous['votes']:,};"
+        f" {now['disagree']:,} disagree with the EP record, {now['absent']:,} absent from ours",
     )
     yield (
         f"T{term} MEPs with positions vs 2019 analysis",
@@ -145,7 +157,13 @@ def parity(data_dir: Path) -> int:
     if failures:
         print(
             f"\n  {failures} parity check(s) FAILED — this pipeline is behind the"
-            " analysis it replaces (FR03)"
+            " analysis it replaces (FR03)."
+        )
+        print(
+            "  Note: the analysed shortfall is votes excluded for contradicting"
+            " Parliament's record.\n  The old pipeline included them because it never"
+            " checked. Closing it means resolving those\n  disagreements, not admitting"
+            " them."
         )
     else:
         print("\n  at least at parity with the 2019 analysis")

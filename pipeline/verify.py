@@ -74,7 +74,11 @@ def learn_bridge(paths: list[Path]) -> dict[str, str]:
     archive = paths[0].parent if paths else Path(".")
     cache = archive / BRIDGE_CACHE
     teachers = sorted(p for p in paths if p.stem.split("-", 2)[2][:10] >= BRIDGE_FROM)
-    fingerprint = {"documents": len(teachers), "newest": teachers[-1].name if teachers else None}
+    if not teachers:
+        raise SystemExit(
+            "no documents carry PersId — the bridge cannot be taught from this set"
+        )
+    fingerprint = {"documents": len(teachers), "newest": teachers[-1].name}
 
     if cache.exists():
         stored = json.loads(cache.read_text())
@@ -145,14 +149,25 @@ def _store_ballots(con, vote_ids: list[int]) -> dict:
     return out
 
 
-def verify(data_dir: Path) -> int:
+def verify(data_dir: Path, term: int | None = None, offset: int = 0, limit: int | None = None) -> int:
+    """Verify the whole archive, or one term at a time.
+
+    Reading 577 documents in a single pass is enough I/O to trip a memory watchdog on a
+    modest machine, so the work is divisible by term; results accumulate per vote.
+    """
     archive = data_dir / "ep_record"
-    files = sorted(archive.glob("*.xml"))
+    files = sorted(archive.glob(f"PV-{term}-*.xml" if term else "*.xml"))
+    batched = offset or limit
+    if batched:
+        files = files[offset : offset + limit if limit else None]
     if not files:
         raise SystemExit("no archived EP record — run `archive` first")
 
+    # Always taught from the whole archive, never from the filtered subset: a
+    # term-filtered run contains no documents that carry PersId at all, and would
+    # otherwise cache an empty bridge over a good one.
     print("  loading MepId->PersId bridge (from documents that carry both)")
-    bridge = learn_bridge(files)
+    bridge = learn_bridge(sorted(archive.glob("*.xml")))
     print(f"    {len(bridge):,} identifier pairs learned")
 
     con = duckdb.connect(str(data_dir / "eu_votes.duckdb"))
@@ -178,15 +193,26 @@ def verify(data_dir: Path) -> int:
     except Exception:
         mapping = {}
 
-    con.execute("DROP TABLE IF EXISTS vote_verification")
     con.execute(
         """
-        CREATE TABLE vote_verification (
+        CREATE TABLE IF NOT EXISTS vote_verification (
             vote_id BIGINT, verified BOOLEAN, partial BOOLEAN,
             ballots_compared BIGINT, ballots_unverifiable BIGINT, note VARCHAR
         )
         """
     )
+    # A batch replaces only the votes it actually re-checks, so runs can be resumed
+    # or sliced without losing what earlier batches established.
+    if batched:
+        pass
+    elif term:
+        con.execute(
+            """DELETE FROM vote_verification WHERE vote_id IN
+               (SELECT id FROM votes WHERE term = ?)""",
+            [term],
+        )
+    else:
+        con.execute("DELETE FROM vote_verification")
 
     results, discrepancies, anomalies, explained = [], 0, 0, 0
     for n, path in enumerate(files, 1):
@@ -251,11 +277,16 @@ def verify(data_dir: Path) -> int:
         if n % 25 == 0 or n == len(files):
             print(f"    {n}/{len(files)} documents, {len(results):,} votes")
 
+    con.execute(
+        "DELETE FROM vote_verification WHERE vote_id IN (SELECT unnest(?))",
+        [[r[0] for r in results]],
+    )
     con.executemany(
         "INSERT INTO vote_verification VALUES (?, ?, ?, ?, ?, ?)", results
     )
     con.execute("DROP TABLE IF EXISTS _verification")
     con.execute("CREATE TABLE _verification (checked_at VARCHAR, script JSON, summary JSON)")
+    # Counted over the whole table so a per-term run still reports the true total.
 
     total_votes = con.execute("SELECT count(*) FROM votes").fetchone()[0]
     covered, verified, partial, unverifiable = con.execute(

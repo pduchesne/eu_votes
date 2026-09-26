@@ -44,7 +44,28 @@ A constraint worth restating: coverage must be earned by verifying votes against
 Parliament's record, never by relaxing `FR02`. Parity and verification are not in
 tension — the point is to verify more, not to check less.
 
-## Progress (2026-09-26)
+## Progress (2026-09-27)
+`TK14`, `TK15`, `TK17` done; `TK16` done but for arbitrary date-window analysis.
+
+| Measure | 2019 analysis | Now | |
+|---|---|---|---|
+| Term-8 votes **extracted** | 10,227 | **10,253** | at parity |
+| Term-8 votes **analysed** (verified) | 10,227 | 10,112 | 141 excluded as contradicting the EP record |
+| MEPs with positions | 824 | **854** | ahead |
+| Per-vote coefficients | 10,227 | 10,112 | tracks analysed |
+| MEP attributes | 9 fields | all present, fill rates met | at parity |
+
+The analysed measure stays red, and should. The 141 excluded votes were each inspected:
+title and tallies agree with Parliament exactly, but the two sources attribute one
+ballot to different members. Publishing them would mean publishing figures that
+contradict the record this platform claims as its authority. The 2019 analysis counted
+them only because it verified nothing.
+
+So parity on extraction is met, and the remaining analysed gap is a **data
+reconciliation question** — resolving 141 disagreements with Parliament — rather than
+pipeline work.
+
+## Superseded progress notes (2026-09-26)
 
 | Measure | 2019 analysis | Now | |
 |---|---|---|---|

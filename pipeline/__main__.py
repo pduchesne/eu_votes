@@ -21,6 +21,10 @@ def main() -> None:
     parser.add_argument(
         "--limit", type=int, help="archive: stop after this many sittings"
     )
+    parser.add_argument(
+        "--term", type=int, help="verify: check one term only (results accumulate)"
+    )
+    parser.add_argument("--offset", type=int, help="verify: skip this many documents")
     args = parser.parse_args()
 
     if args.stage in ("fetch", "all"):
@@ -70,7 +74,7 @@ def main() -> None:
         from .verify import verify
 
         print("verify:")
-        if verify(args.data_dir):
+        if verify(args.data_dir, args.term, args.offset or 0, args.limit):
             raise SystemExit(1)
 
     if args.stage in ("mine", "all"):

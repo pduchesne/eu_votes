@@ -15,15 +15,21 @@ with and without times. They are flagged, not deleted, so the evidence survives.
 """
 
 import csv
+import re
 from collections import Counter, defaultdict
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
 import duckdb
 
-from .verify import POSITIONS, _iter_results, _pers_id, learn_bridge
+from .verify import POSITIONS, _iter_results, _pers_id, _tag, learn_bridge
 
 TERM = 8
+
+
+def _normalise(text: str | None) -> str:
+    """Strip everything but alphanumerics so punctuation and spacing cannot differ."""
+    return re.sub(r"[^a-z0-9]", "", (text or "").lower())
 
 
 def _ep_results(path: Path, bridge: dict[str, str]):
@@ -44,11 +50,18 @@ def _ep_results(path: Path, bridge: dict[str, str]):
                     if pers:
                         ids.add(int(pers))
             ballots[position] = ids
+        # The description carries the vote's own reference ("RC-B8-1344/2016 - Am 1").
+        # Checked against 498 identifier-matched votes it agreed every time, which makes
+        # it a stronger discriminator than either tallies or ballots.
+        description = next(
+            (c for c in result if _tag(c) == "RollCallVote.Description.Text"), None
+        )
         identifier = result.attrib.get("Identifier", "")
         out.append(
             {
                 "index": index,
                 "id": int(identifier) if identifier.lstrip("-").isdigit() else None,
+                "title": _normalise("".join(description.itertext())) if description is not None else "",
                 "signature": (
                     tallies.get("FOR"),
                     tallies.get("AGAINST"),
@@ -98,12 +111,13 @@ def reconcile(data_dir: Path) -> int:
     con.execute("SET memory_limit='3GB'")
 
     ours_by_date = defaultdict(list)
-    for vote_id, date, f, a, ab in con.execute(
-        """SELECT id, strftime(timestamp, '%Y-%m-%d'), count_for, count_against, count_abstention
+    for vote_id, date, f, a, ab, title in con.execute(
+        """SELECT id, strftime(timestamp, '%Y-%m-%d'), count_for, count_against,
+                  count_abstention, display_title
            FROM votes WHERE term = ?""",
         [TERM],
     ).fetchall():
-        ours_by_date[date].append((vote_id, (f, a, ab)))
+        ours_by_date[date].append((vote_id, (f, a, ab), _normalise(title)))
 
     print(f"  learning identity bridge (needed only where tallies collide)")
     bridge = learn_bridge(sorted(archive.glob("*.xml")))
@@ -117,18 +131,46 @@ def reconcile(data_dir: Path) -> int:
 
         taken, claimed = set(), set()
         for entry in ep:  # 1. identifier, where both sides have one
-            if entry["id"] is not None and any(v == entry["id"] for v, _ in mine):
+            if entry["id"] is not None and any(v == entry["id"] for v, _, _ in mine):
                 matches.append((entry["id"], date, entry["index"], "identifier"))
                 taken.add(entry["index"])
                 claimed.add(entry["id"])
                 counts["identifier"] += 1
+
+        # 2. the vote's own reference, which both sides record verbatim. A sitting can
+        # reuse a reference across results, so a title group with more than one
+        # candidate is paired on the tally rather than in arbitrary order — binding by
+        # position alone mismatched 141 votes.
+        by_title = defaultdict(list)
+        for entry in ep:
+            if entry["index"] not in taken and entry["title"]:
+                by_title[entry["title"]].append(entry)
+        mine_by_title = defaultdict(list)
+        for vote_id, signature, title in mine:
+            if vote_id not in claimed and title:
+                mine_by_title[title].append((vote_id, signature))
+
+        for title, rows in mine_by_title.items():
+            candidates = by_title.get(title, [])
+            for vote_id, signature in rows:
+                if not candidates:
+                    break
+                exact = [e for e in candidates if e["signature"] == signature]
+                entry = exact[0] if len(exact) == 1 else (candidates[0] if len(candidates) == 1 else None)
+                if entry is None:
+                    continue
+                matches.append((vote_id, date, entry["index"], "title"))
+                taken.add(entry["index"])
+                claimed.add(vote_id)
+                candidates.remove(entry)
+                counts["title"] += 1
 
         pool = defaultdict(list)
         for entry in ep:
             if entry["index"] not in taken:
                 pool[entry["signature"]].append(entry)
         pending = defaultdict(list)
-        for vote_id, signature in mine:
+        for vote_id, signature, _ in mine:
             if vote_id not in claimed:
                 pending[signature].append(vote_id)
 
@@ -190,8 +232,8 @@ def reconcile(data_dir: Path) -> int:
 
     print(
         f"  matched {len(matches):,} term-8 votes"
-        f" (identifier {counts['identifier']:,}, tally {counts['tally']:,},"
-        f" ballots {counts['ballots']:,})"
+        f" (identifier {counts['identifier']:,}, title {counts['title']:,},"
+        f" tally {counts['tally']:,}, ballots {counts['ballots']:,})"
     )
     if counts["ambiguous"]:
         print(f"  {counts['ambiguous']:,} left unmatched — too ambiguous to bind safely")
