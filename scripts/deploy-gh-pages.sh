@@ -11,6 +11,9 @@ set -euo pipefail
 
 BRANCH="gh-pages"
 SITE="site"
+# origin may be an HTTPS URL with no stored credentials; set DEPLOY_REMOTE to push
+# somewhere else, e.g. DEPLOY_REMOTE=git@github.com:user/repo.git
+REMOTE="${DEPLOY_REMOTE:-origin}"
 
 cd "$(dirname "$0")/.."
 
@@ -25,7 +28,10 @@ trap 'cd "$OLDPWD" 2>/dev/null || true; git worktree remove --force "$work" 2>/d
 
 git worktree add --detach "$work" >/dev/null
 cd "$work"
-git checkout --orphan "$BRANCH" >/dev/null 2>&1
+# A fresh orphan under a temporary name: checking out $BRANCH directly fails once the
+# branch exists, which made this work exactly once.
+staging="deploy-$$"
+git checkout --orphan "$staging" >/dev/null 2>&1
 git rm -rf . >/dev/null 2>&1 || true
 
 cp -r "$OLDPWD/$SITE/." .
@@ -33,8 +39,10 @@ git add -A
 git commit -q -m "Publish site built from $commit"
 # The branch is committed locally before this point, so a push that fails for want of
 # credentials leaves the work intact: authenticate and push, no rebuild needed.
-git push -f origin "$BRANCH"
+# Point the branch at the commit just built, then publish it.
+git branch -f "$BRANCH" HEAD
+git push -f "$REMOTE" "$BRANCH"
 
 cd "$OLDPWD"
-echo "pushed $BRANCH — enable Pages for this branch at:"
+echo "pushed $BRANCH to $REMOTE — Pages settings:"
 echo "  https://github.com/pduchesne/eu_votes/settings/pages"
