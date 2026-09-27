@@ -92,6 +92,128 @@ def _rows(con, sql: str, params=None) -> list[dict]:
     return [dict(zip(columns, row)) for row in cursor.fetchall()]
 
 
+# A theme counts as one a member breaks with their group on when they diverge there
+# markedly more than they do generally. An absolute rate would simply rank members by
+# how rebellious they are overall and say nothing about which subjects move them.
+DIVERGENCE_MIN_VOTES = 20
+DIVERGENCE_MARGIN = 0.15
+DIVERGENCE_FLOOR = 0.10
+
+
+def _write_member_pages(con, out: Path) -> None:
+    """One small file per member, so a profile costs a reader only their own page."""
+    con.execute(
+        """
+        CREATE OR REPLACE TEMP VIEW cast_votes AS
+        SELECT mv.vote_id, mv.member_id, mv.position, mv.group_code, v.term
+        FROM member_votes mv
+        JOIN votes v ON v.id = mv.vote_id
+        JOIN vote_verification ver ON ver.vote_id = v.id AND ver.verified
+        WHERE mv.position <> 'DID_NOT_VOTE'
+          AND mv.group_code IS NOT NULL AND mv.group_code <> ''
+        """
+    )
+    con.execute(
+        """
+        CREATE OR REPLACE TEMP VIEW group_majority AS
+        SELECT vote_id, group_code, arg_max(position, n) AS pos
+        FROM (SELECT vote_id, group_code, position, count(*) n FROM cast_votes GROUP BY 1, 2, 3)
+        GROUP BY 1, 2
+        """
+    )
+
+    # Participation is only answerable where the source records non-voting. The 8th
+    # term's does not, so it is left null rather than reported as perfect attendance.
+    participation = {}
+    for member_id, term, eligible, cast in con.execute(
+        """
+        SELECT mv.member_id, v.term, count(*),
+               count(*) FILTER (WHERE mv.position <> 'DID_NOT_VOTE')
+        FROM member_votes mv
+        JOIN votes v ON v.id = mv.vote_id
+        JOIN vote_verification ver ON ver.vote_id = v.id AND ver.verified
+        GROUP BY 1, 2
+        """
+    ).fetchall():
+        participation[(member_id, term)] = (eligible, cast)
+
+    divergence: dict[tuple, list] = {}
+    for member_id, term, code, label, votes, rate, baseline in con.execute(
+        f"""
+        WITH per_theme AS (
+            SELECT c.member_id, c.term, t.theme_code, t.theme_label, count(*) AS votes,
+                   avg(CASE WHEN c.position <> m.pos THEN 1.0 ELSE 0 END) AS rate
+            FROM cast_votes c
+            JOIN group_majority m USING (vote_id, group_code)
+            JOIN vote_topics t ON t.vote_id = c.vote_id
+            GROUP BY 1, 2, 3, 4 HAVING count(*) >= {DIVERGENCE_MIN_VOTES}
+        ),
+        baseline AS (
+            SELECT c.member_id, c.term,
+                   avg(CASE WHEN c.position <> m.pos THEN 1.0 ELSE 0 END) AS rate
+            FROM cast_votes c JOIN group_majority m USING (vote_id, group_code)
+            GROUP BY 1, 2
+        )
+        SELECT p.member_id, p.term, p.theme_code, p.theme_label, p.votes,
+               round(p.rate, 4), round(b.rate, 4)
+        FROM per_theme p JOIN baseline b USING (member_id, term)
+        WHERE p.rate >= b.rate + {DIVERGENCE_MARGIN} AND p.rate >= {DIVERGENCE_FLOOR}
+        ORDER BY p.rate - b.rate DESC
+        """
+    ).fetchall():
+        divergence.setdefault((member_id, term), []).append(
+            {"code": code, "label": label, "votes": votes, "rate": rate, "baseline": baseline}
+        )
+
+    records = {}
+    for row in _rows(
+        con,
+        """
+        SELECT c.member_id, c.term, c.group_code, c.votes_cast, round(c.loyalty, 4) AS loyalty,
+               c.main_votes_cast, round(c.main_loyalty, 4) AS main_loyalty,
+               p.pc1, p.pc2, p.pc3
+        FROM mep_cohesion c
+        LEFT JOIN mep_positions p ON p.member_id = c.member_id AND p.term = c.term
+        """,
+    ):
+        member_id, term = row.pop("member_id"), row.pop("term")
+        eligible, cast = participation.get((member_id, term), (None, None))
+        pcs = [row.pop("pc1"), row.pop("pc2"), row.pop("pc3")]
+        records.setdefault(member_id, {})[str(term)] = {
+            **row,
+            "position": None if pcs[0] is None else [round(v, 3) for v in pcs],
+            "votes_eligible": eligible,
+            # Term 8 lists only members who voted, so its denominator is the votes they
+            # took part in — a participation rate from it would be meaningless.
+            "participation": None if term == 8 or not eligible else round(cast / eligible, 4),
+            "divergence": divergence.get((member_id, term), [])[:6],
+        }
+
+    profiles = {
+        m["id"]: m
+        for m in _rows(
+            con,
+            """
+            SELECT id, first_name, last_name, country_code, gender, constituency,
+                   photo_url, ep_url
+            FROM members
+            """,
+        )
+    }
+
+    folder = out / "members"
+    folder.mkdir(parents=True, exist_ok=True)
+    for old in folder.glob("*.json"):
+        old.unlink()
+    for member_id, terms in records.items():
+        profile = profiles.get(member_id, {"id": member_id})
+        (folder / f"{member_id}.json").write_text(
+            json.dumps({**profile, "record": terms}, separators=(",", ":")) + "\n"
+        )
+    flagged = sum(1 for t in records.values() for r in t.values() if r["divergence"])
+    print(f"    members/: {len(records):,} profiles, {flagged:,} member-terms with a divergent theme")
+
+
 def publish(data_dir: Path) -> None:
     con = duckdb.connect(str(data_dir / "eu_votes.duckdb"), read_only=True)
     con.execute("SET enable_progress_bar=false")
@@ -403,6 +525,8 @@ def publish(data_dir: Path) -> None:
         "vote-cloud.json",
         {"votes": [[r[0], r[1], r[2], r[3], r[4]] for r in cloud], "themes": index},
     )
+
+    _write_member_pages(con, out)
 
     source = json.loads(
         con.execute("SELECT source FROM _provenance LIMIT 1").fetchone()[0]

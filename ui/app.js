@@ -60,7 +60,7 @@ async function boot() {
 function route() {
   const parts = location.hash.replace("#/", "").split("/");
   const view = parts[0] || "landscape";
-  const known = ["landscape", "meps", "axes", "topic", "topics", "stories", "methodology"];
+  const known = ["landscape", "meps", "member", "axes", "topic", "topics", "stories", "methodology"];
   const active = known.includes(view) ? view : "landscape";
   known.forEach((name) => ($(`view-${name}`).hidden = name !== active));
   document.querySelectorAll("nav a").forEach((a) =>
@@ -69,6 +69,7 @@ function route() {
   if (active === "landscape") drawLandscape();
   if (active === "axes") renderAxes();
   if (active === "topic") renderTopic(decodeURIComponent(parts.slice(1).join("/")));
+  if (active === "member") renderMember(parts[1]);
 }
 
 function termOptions(select, onChange) {
@@ -186,17 +187,14 @@ function renderMepList(query) {
   $("mep-results").innerHTML = matches
     .slice(0, 60)
     .map(
-      (mep) => `<button class="card" data-id="${mep.id}">
+      (mep) => `<a class="card" href="#/member/${mep.id}">
         <img src="${mep.photo_url}" alt="" loading="lazy">
         <span>
           <span class="who">${mep.first_name || ""} ${mep.last_name}</span>
           <span class="meta">${mep.country_code} · ${(mep.groups || []).join(", ")}</span>
-        </span></button>`
+        </span></a>`
     )
     .join("");
-  $("mep-results").querySelectorAll(".card").forEach((card) =>
-    card.addEventListener("click", () => showMep(Number(card.dataset.id)))
-  );
 }
 
 function showMep(id, container = $("mep-detail")) {
@@ -222,6 +220,7 @@ function showMep(id, container = $("mep-detail")) {
         <th class="num">Voted with group</th><th class="num">Substantive votes</th>
         <th class="num">With group (substantive)</th></tr></thead>
       <tbody>${rows}</tbody></table></div>
+    <p><a href="#/member/${mep.id}">Full profile →</a></p>
     <p class="caveat">Counts are roll-call votes only. Parliament publishes no record of
     who was absent, so these are participation figures, not attendance. "Voted with
     group" compares each member against their own group's majority; the substantive
@@ -403,6 +402,74 @@ async function renderAxes() {
       </section>`
     )
     .join("");
+}
+
+// ---------------------------------------------------------------- one member
+
+async function renderMember(id) {
+  const member = await load(`members/${encodeURIComponent(id)}.json`).catch(() => null);
+  if (!member) {
+    $("member-head").innerHTML = `<p class="note">No published profile for that member.</p>`;
+    $("member-terms").innerHTML = "";
+    return;
+  }
+  const name = `${member.first_name || ""} ${member.last_name}`.trim();
+  $("member-head").innerHTML = `<div class="member-head">
+    <img src="${member.photo_url}" alt="" loading="lazy">
+    <div>
+      <h1>${escape(name)}</h1>
+      <p class="meta">${escape(member.country_code || "")}${
+        member.constituency ? ` · ${escape(member.constituency)}` : ""
+      }</p>
+      <p class="note"><a href="${member.ep_url}">Profile at the European Parliament →</a></p>
+    </div></div>`;
+
+  const terms = Object.keys(member.record).map(Number).sort((a, b) => b - a);
+  $("member-terms").innerHTML = terms
+    .map((term) => {
+      const r = member.record[String(term)];
+      const participation = r.participation == null
+        ? `<span class="stat"><b>—</b><span>participation not recorded for this term</span></span>`
+        : `<span class="stat"><b>${pct(r.participation)}</b><span>took part in ${num(
+            r.votes_eligible
+          )} roll-call votes</span></span>`;
+      return `<section class="term-block">
+        <h2>${termLabel(term)} — ${escape(groupLabel(r.group_code))}</h2>
+        <div class="stats">
+          ${participation}
+          <span class="stat"><b>${pct(r.loyalty)}</b><span>voted with their group,
+            over ${num(r.votes_cast)} votes</span></span>
+          <span class="stat"><b>${pct(r.main_loyalty)}</b><span>${
+            r.main_votes_cast == null
+              ? "substantive votes not identifiable this term"
+              : `on ${num(r.main_votes_cast)} substantive votes`
+          }</span></span>
+        </div>
+        ${renderDivergence(r)}
+      </section>`;
+    })
+    .join("");
+}
+
+/** Themes where this member broke with their group markedly more than they usually do.
+ *
+ * Shown against their own baseline rather than in the absolute: a member who follows
+ * their group 95% of the time diverging on a fifth of one theme's votes is saying
+ * something; a habitual rebel doing the same is not. */
+function renderDivergence(record) {
+  if (!record.divergence?.length) {
+    return `<p class="note">No theme where they broke with their group notably more
+      than usual, at ${num(20)} votes or more.</p>`;
+  }
+  return `<div class="divergence">
+    <h3>Where they part company with their group</h3>
+    <ul>${record.divergence
+      .map(
+        (d) => `<li><a href="#/topic/${encodeURIComponent(d.code)}">${escape(d.label)}</a>
+          — voted against their group on <b>${pct(d.rate)}</b> of ${num(d.votes)} votes
+          <span class="compare">(they usually do on ${pct(d.baseline)})</span></li>`
+      )
+      .join("")}</ul></div>`;
 }
 
 // ---------------------------------------------------------------- one topic
