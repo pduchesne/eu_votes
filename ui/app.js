@@ -19,7 +19,7 @@ const GROUP_COLOUR = {
 };
 const FALLBACK = [150, 150, 150];
 
-const state = { meta: null, axisVotes: null, axes: null, meps: [], groups: [], topics: [], stories: [], votes: {}, term: null, deck: null };
+const state = { meta: null, axisVotes: null, axes: null, topicDetail: null, cloud: null, topicDeck: null, meps: [], groups: [], topics: [], stories: [], votes: {}, term: null, deck: null };
 
 const $ = (id) => document.getElementById(id);
 const pct = (v) => (v == null ? "—" : `${(v * 100).toFixed(1)}%`);
@@ -58,8 +58,9 @@ async function boot() {
 }
 
 function route() {
-  const view = (location.hash.replace("#/", "") || "landscape").split("/")[0];
-  const known = ["landscape", "meps", "axes", "topics", "stories", "methodology"];
+  const parts = location.hash.replace("#/", "").split("/");
+  const view = parts[0] || "landscape";
+  const known = ["landscape", "meps", "axes", "topic", "topics", "stories", "methodology"];
   const active = known.includes(view) ? view : "landscape";
   known.forEach((name) => ($(`view-${name}`).hidden = name !== active));
   document.querySelectorAll("nav a").forEach((a) =>
@@ -67,6 +68,7 @@ function route() {
   );
   if (active === "landscape") drawLandscape();
   if (active === "axes") renderAxes();
+  if (active === "topic") renderTopic(decodeURIComponent(parts.slice(1).join("/")));
 }
 
 function termOptions(select, onChange) {
@@ -250,6 +252,7 @@ function renderTopics() {
   rows.forEach((r) => volume.set(r.topic_label, (volume.get(r.topic_label) || 0) + r.votes));
   const topics = [...volume.keys()].sort((a, b) => volume.get(b) - volume.get(a));
   const lookup = new Map(rows.map((r) => [`${r.topic_label}|${r.group_code}`, r]));
+  const codeFor = new Map(rows.map((r) => [r.topic_label, r.topic_code]));
   const basis = rows[0].basis || "substantive votes";
 
   $("topics-table").innerHTML = `<p class="note">${topics.length} themes, busiest first — the same vocabulary the
@@ -265,7 +268,11 @@ function renderTopics() {
             return `<td class="num" title="${num(row.votes)} votes">${pct(row.support)}</td>`;
           })
           .join("");
-        return `<tr><td>${topic}</td>${cells}</tr>`;
+        const code = codeFor.get(topic);
+        const name = code
+          ? `<a href="#/topic/${encodeURIComponent(code)}">${escape(topic)}</a>`
+          : escape(topic);
+        return `<tr><td>${name}</td>${cells}</tr>`;
       })
       .join("")}</tbody></table></div>
     <p class="caveat">Share of ${basis} on that subject where the group's majority voted
@@ -355,7 +362,7 @@ function renderEnd(end, side) {
   // underneath, useful but too specific to lead with.
   const themes = (end.themes || []).length
     ? `<p class="themes">${end.themes
-        .map((t) => `<span class="theme">${escape(t.theme)}</span>`)
+        .map((t) => `<a class="theme" href="#/topic/${encodeURIComponent(t.code || t.theme)}">${escape(t.theme)}</a>`)
         .join("")}</p>`
     : "";
   const keywords = end.keywords.length
@@ -396,6 +403,109 @@ async function renderAxes() {
       </section>`
     )
     .join("");
+}
+
+// ---------------------------------------------------------------- one topic
+
+async function renderTopic(code) {
+  if (!state.topicDetail) state.topicDetail = await load("topics-detail.json").catch(() => []);
+  const theme = state.topicDetail.find((t) => t.code === code || t.label === code);
+  if (!theme) {
+    $("topic-title").textContent = "Unknown theme";
+    $("topic-summary").textContent = "";
+    return;
+  }
+  $("topic-title").textContent = theme.label;
+  const terms = theme.terms.slice().sort((a, b) => a - b);
+  const termText = terms.length === 1
+    ? `the ${terms[0]}th term`
+    : `the ${terms.slice(0, -1).join("th, ")}th and ${terms.at(-1)}th terms`;
+  $("topic-summary").innerHTML =
+    `${num(theme.votes)} verified roll-call votes between ${theme.first_vote} and
+     ${theme.last_vote}, across ${termText}. Classified by Parliament, not by us.`;
+
+  $("topic-groups").innerHTML = theme.groups
+    .map(
+      (g) => `<div class="support-row">
+        <span class="name">${escape(groupLabel(g.code))}</span>
+        <span class="bar"><i style="width:${(g.support * 100).toFixed(0)}%;
+          background:rgb(${(GROUP_COLOUR[g.code] || FALLBACK).join(",")})"></i></span>
+        <span class="value">${pct(g.support)}</span>
+      </div>`
+    )
+    .join("") || `<p class="note">Too few votes per group to summarise.</p>`;
+
+  $("topic-votes").innerHTML = `<table>
+    <thead><tr><th>Date</th><th>Vote</th><th class="num">For</th><th class="num">Against</th></tr></thead>
+    <tbody>${theme.recent
+      .map(
+        (v) => `<tr><td>${v.date}</td>
+          <td><a href="${v.source}">${escape(v.title)}</a></td>
+          <td class="num">${num(v.count_for)}</td><td class="num">${num(v.count_against)}</td></tr>`
+      )
+      .join("")}</tbody></table>`;
+
+  await drawTopicCloud(theme);
+}
+
+/** Every vote as a point, with this theme's votes picked out of the crowd.
+ *
+ * Votes sit in the same frame as members, so a vote's position says how it divided the
+ * chamber — not what it was about. Two votes on one theme can sit at opposite ends,
+ * which is the point of showing the whole cloud behind them. */
+async function drawTopicCloud(theme) {
+  if (!state.cloud) state.cloud = await load("vote-cloud.json").catch(() => null);
+  const wrap = $("topic-cloud-wrap");
+  if (!state.cloud || !window.deck) {
+    wrap.innerHTML = `<p class="note" style="padding:1rem">The vote cloud could not be loaded.</p>`;
+    return;
+  }
+  const highlight = new Set(state.cloud.themes[theme.code] || []);
+  const scale = 1200; // loadings are ~0.02; scale so the cloud fills the frame
+  const points = state.cloud.votes.map((v, i) => ({
+    id: v[0],
+    position: [v[1] * scale, v[2] * scale, v[3] * scale],
+    term: v[4],
+    on: highlight.has(i),
+  }));
+
+  $("topic-cloud-caveat").textContent =
+    `Every one of ${num(points.length)} verified votes, with the ${num(highlight.size)} on ` +
+    `this theme picked out. A vote's place reflects how it split the chamber, not its ` +
+    `subject — so votes on one theme scatter when members disagreed about them in ` +
+    `different ways, and cluster when they divided the chamber alike.`;
+
+  if (state.topicDeck) state.topicDeck.finalize();
+  state.topicDeck = new deck.Deck({
+    canvas: "topic-cloud",
+    views: new deck.OrbitView({ orbitAxis: "Y", fovy: 50 }),
+    initialViewState: { target: [0, 0, 0], rotationX: 20, rotationOrbit: 25, zoom: 3.4 },
+    controller: true,
+    layers: [
+      new deck.PointCloudLayer({
+        id: "all-votes",
+        data: points.filter((p) => !p.on),
+        coordinateSystem: deck.COORDINATE_SYSTEM.CARTESIAN,
+        getPosition: (d) => d.position,
+        getColor: [175, 180, 188, 55],
+        pointSize: 2,
+      }),
+      new deck.PointCloudLayer({
+        id: "theme-votes",
+        data: points.filter((p) => p.on),
+        coordinateSystem: deck.COORDINATE_SYSTEM.CARTESIAN,
+        getPosition: (d) => d.position,
+        getColor: [29, 78, 137, 235],
+        pointSize: 4.5,
+        pickable: true,
+      }),
+    ],
+    getTooltip: ({ object }) =>
+      object && {
+        html: `${theme.label}<br>vote ${object.id} · ${object.term}th term`,
+        style: { fontSize: "0.78rem" },
+      },
+  });
 }
 
 // ---------------------------------------------------------------- stories

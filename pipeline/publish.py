@@ -319,9 +319,10 @@ def publish(data_dir: Path) -> None:
                         SELECT vc.vote_id FROM vote_components vc
                         WHERE vc.term = ? ORDER BY vc.pc{axis} {order} LIMIT 120
                     )
-                    SELECT t.theme_label AS theme, count(DISTINCT t.vote_id) AS votes
+                    SELECT t.theme_label AS theme, t.theme_code AS code,
+                           count(DISTINCT t.vote_id) AS votes
                     FROM top JOIN vote_topics t ON t.vote_id = top.vote_id
-                    GROUP BY t.theme_label ORDER BY votes DESC LIMIT 4
+                    GROUP BY t.theme_label, t.theme_code ORDER BY votes DESC LIMIT 4
                     """,
                     [term],
                 )
@@ -332,6 +333,76 @@ def publish(data_dir: Path) -> None:
                 }
             axes.append(entry)
     _write(out, "axes.json", axes)
+
+    # Per-theme detail: what the theme covers, how each group treated it, and its most
+    # recent votes. Kept separate from the cloud so a topic page loads text first.
+    theme_rows = _rows(
+        con,
+        """
+        SELECT t.theme_code AS code, t.theme_label AS label,
+               count(DISTINCT t.vote_id) AS votes,
+               min(strftime(v.timestamp, '%Y-%m-%d')) AS first_vote,
+               max(strftime(v.timestamp, '%Y-%m-%d')) AS last_vote,
+               list(DISTINCT v.term) AS terms
+        FROM vote_topics t JOIN votes v ON v.id = t.vote_id
+        GROUP BY 1, 2 ORDER BY votes DESC
+        """,
+    )
+    for theme in theme_rows:
+        theme["recent"] = _rows(
+            con,
+            """
+            SELECT v.id, coalesce(nullif(v.procedure_title, ''), v.display_title) AS title,
+                   strftime(v.timestamp, '%Y-%m-%d') AS date, v.term, v.result,
+                   v.count_for, v.count_against
+            FROM vote_topics t JOIN votes v ON v.id = t.vote_id
+            WHERE t.theme_code = ? ORDER BY v.timestamp DESC LIMIT 30
+            """,
+            [theme["code"]],
+        )
+        for row in theme["recent"]:
+            row["source"] = document_url(row["term"], row["date"])
+        theme["groups"] = _rows(
+            con,
+            """
+            WITH tallies AS (
+                SELECT mv.vote_id, mv.group_code, mv.position, count(*) n
+                FROM member_votes mv
+                JOIN vote_topics t ON t.vote_id = mv.vote_id AND t.theme_code = ?
+                WHERE mv.position <> 'DID_NOT_VOTE' AND mv.group_code IS NOT NULL
+                GROUP BY 1, 2, 3
+            ),
+            majority AS (SELECT vote_id, group_code, arg_max(position, n) AS pos FROM tallies GROUP BY 1, 2)
+            SELECT group_code AS code, count(*) AS votes,
+                   round(avg(CASE WHEN pos = 'FOR' THEN 1.0 ELSE 0 END), 4) AS support
+            FROM majority GROUP BY 1 HAVING count(*) >= 10 ORDER BY support DESC
+            """,
+            [theme["code"]],
+        )
+    _write(out, "topics-detail.json", theme_rows)
+
+    # Every vote as a point in the same frame the members live in, plus an index of
+    # which points belong to each theme. Compact on purpose: this is the one bundle a
+    # visitor only downloads if they open a topic page.
+    cloud = con.execute(
+        """
+        SELECT vc.vote_id, round(vc.pc1, 5), round(vc.pc2, 5), round(vc.pc3, 5), v.term
+        FROM vote_components vc JOIN votes v ON v.id = vc.vote_id
+        ORDER BY vc.vote_id
+        """
+    ).fetchall()
+    position = {row[0]: i for i, row in enumerate(cloud)}
+    index: dict[str, list[int]] = {}
+    for theme_code, vote_id in con.execute(
+        "SELECT theme_code, vote_id FROM vote_topics"
+    ).fetchall():
+        if vote_id in position:
+            index.setdefault(theme_code, []).append(position[vote_id])
+    _write(
+        out,
+        "vote-cloud.json",
+        {"votes": [[r[0], r[1], r[2], r[3], r[4]] for r in cloud], "themes": index},
+    )
 
     source = json.loads(
         con.execute("SELECT source FROM _provenance LIMIT 1").fetchone()[0]

@@ -180,3 +180,17 @@ a { color: var(--accent); }
   background: color-mix(in srgb, var(--accent) 12%, transparent);
   border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
 }
+
+#topic-cloud-wrap {
+  position: relative; height: 52vh; min-height: 340px;
+  border: 1px solid var(--line); border-radius: var(--radius);
+  overflow: hidden; background: var(--panel);
+}
+#topic-cloud { width: 100%; height: 100%; display: block; }
+.theme-link { cursor: pointer; text-decoration: none; }
+a.theme { text-decoration: none; }
+a.theme:hover { background: color-mix(in srgb, var(--accent) 22%, transparent); }
+.support-row { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.35rem; font-size: 0.87rem; }
+.support-row .name { width: 10rem; flex: none; }
+.support-row .bar { flex: 1; }
+.support-row .value { width: 3.4rem; text-align: right; font-variant-numeric: tabular-nums; }
