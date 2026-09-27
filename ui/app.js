@@ -349,15 +349,19 @@ function ridgeline(term, axis, groups) {
 const mean = (xs) => xs.reduce((a, b) => a + b, 0) / (xs.length || 1);
 
 function renderEnd(end, side) {
+  // Themes first: they say what this end is about. The recurring words are the texture
+  // underneath, useful but too specific to lead with.
+  const themes = (end.themes || []).length
+    ? `<p class="themes">${end.themes
+        .map((t) => `<span class="theme">${escape(t.theme)}</span>`)
+        .join("")}</p>`
+    : "";
   const keywords = end.keywords.length
     ? `<p class="keywords">Recurring words: <b>${end.keywords.map(escape).join(", ")}</b></p>`
     : "";
-  const subjects = end.subjects.length
-    ? `<p class="subject">Mostly: ${end.subjects.map(([s]) => escape(s)).join(" · ")}</p>`
-    : "";
   return `<div class="end">
     <h3>Voting <em>for</em> these puts a member at the ${side}</h3>
-    ${keywords}${subjects}
+    ${themes}${keywords}
     <ol>${end.votes
       .slice(0, 5)
       .map(

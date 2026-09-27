@@ -173,3 +173,10 @@ a { color: var(--accent); }
 .end ol { margin: 0; padding-left: 1.1rem; font-size: 0.84rem; }
 .end li { margin-bottom: 0.4rem; }
 .end .subject { color: var(--muted); font-size: 0.78rem; }
+
+.end .themes { margin: 0 0 0.5rem; display: flex; flex-wrap: wrap; gap: 0.3rem; }
+.end .theme {
+  font-size: 0.78rem; padding: 0.12rem 0.5rem; border-radius: 11px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+}

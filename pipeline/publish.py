@@ -306,14 +306,37 @@ def publish(data_dir: Path) -> None:
                     seen.add(key)
                     distinct.append(row)
 
-                subjects: dict[str, int] = {}
-                for row in top:
-                    if row["subject"]:
-                        subjects[row["subject"]] = subjects.get(row["subject"], 0) + 1
+                # Themes, not dossiers. Parliament's subject codes are hierarchical, and
+                # the leaf level ("2024 discharge", "2026 budget") describes individual
+                # files rather than what an end of an axis is about. Rolling up one level
+                # gives 55 themes instead of 337 leaves — coarse enough to characterise,
+                # specific enough to mean something. The taxonomy is Parliament's own, so
+                # this needs no inference on our part.
+                themes = _rows(
+                    con,
+                    f"""
+                    WITH top AS (
+                        SELECT vc.vote_id FROM vote_components vc
+                        WHERE vc.term = ? ORDER BY vc.pc{axis} {order} LIMIT 120
+                    )
+                    SELECT coalesce(mid.label, broad.label, leaf.label) AS theme,
+                           count(DISTINCT sv.vote_id) AS votes
+                    FROM top
+                    JOIN oeil_subject_votes sv ON sv.vote_id = top.vote_id
+                    JOIN oeil_subjects leaf ON leaf.code = sv.oeil_subject_code
+                    LEFT JOIN oeil_subjects mid
+                      ON mid.code = array_to_string(array_slice(str_split(sv.oeil_subject_code, '.'), 1, 2), '.')
+                    LEFT JOIN oeil_subjects broad
+                      ON broad.code = split_part(sv.oeil_subject_code, '.', 1)
+                    GROUP BY theme HAVING theme IS NOT NULL
+                    ORDER BY votes DESC LIMIT 4
+                    """,
+                    [term],
+                )
                 entry[end] = {
                     "votes": distinct[:6],
                     "keywords": _keywords([r["title"] for r in top]),
-                    "subjects": sorted(subjects.items(), key=lambda kv: -kv[1])[:4],
+                    "themes": themes,
                 }
             axes.append(entry)
     _write(out, "axes.json", axes)
