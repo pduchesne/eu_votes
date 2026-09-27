@@ -24,7 +24,7 @@ const state = {
   meps: [], groups: [], topics: [], stories: [], votes: {}, term: null, deck: null,
   // Topic landscape: the bundle, which term's frame is currently drawn, its deck, and the
   // selected subject.
-  topicAxes: null, tlDrawn: null, tlDeck: null, tlTopic: null,
+  topicAxes: null, tlDrawn: null, tlDeck: null, tlTopic: null, tlChosenFrame: false,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -170,6 +170,18 @@ function renderMethodology() {
     text and backing a permissive one pull a member in opposite directions. Each topic axis
     reports how far the naive yes-count would have agreed with it, because on many subjects
     it does not — and on some it inverts outright.</p>
+    <p>Which three subjects frame that view is not a cosmetic choice. Each subject's axis
+    points somewhere in the main three-axis space, and most of them point the same way:
+    in the 9th term, 33 of 38 subjects lie closest to the first axis, five to the second,
+    and <em>none</em> to the third. Framing the view with the busiest subjects therefore
+    draws one division three times over — it covered 0.01 of the space, where 1.00 would
+    be three unrelated divisions. The default three are instead chosen, from subjects with
+    at least 150 verified votes, to come as close to perpendicular as the data allows.
+    Any three can be selected, and the page states what the chosen three actually span.</p>
+    <p class="caveat">That no subject's internal disagreement resembles the third axis is
+    itself a result: the third axis is not about any one policy area but cuts across them.
+    It is also why even the best topic frame covers under half the space.</p>
+
     <p class="caveat">Direction remains arbitrary here too. Each topic axis is oriented to
     agree with the term's main axis so that the subjects can be compared with one another,
     and where that correlation is too weak to decide, the subject's most influential vote
@@ -520,7 +532,12 @@ function initTopicLandscape() {
     state.tlDrawn = null;
     renderTopicLandscape(state.tlTopic);
   });
-  ["tl-x", "tl-y", "tl-z"].forEach((id) => ($(id).onchange = drawTopicFrame));
+  ["tl-x", "tl-y", "tl-z"].forEach((id) =>
+    ($(id).onchange = () => {
+      state.tlChosenFrame = true;
+      drawTopicFrame();
+    })
+  );
 }
 
 const topicBundle = () => state.topicAxes?.terms?.[String(state.term)] || null;
@@ -550,19 +567,54 @@ async function renderTopicLandscape(code) {
   renderTopicAxisDetail(bundle, code);
 }
 
-/** The three framing subjects. Defaults to the best-attested ones, which is also why
- *  they are the ones a reader is most likely to have an opinion about. */
+/** The three framing subjects.
+ *
+ * Defaults to the frame the pipeline chose for spanning the main space, not to the
+ * busiest subjects: in most terms the busiest all follow the chamber's first division,
+ * so framing by them draws that one division three times and the other two components
+ * never appear. */
 function fillFrameSelectors(bundle) {
   const options = bundle.topics
     .map((t) => `<option value="${t.code}">${escape(t.label)}</option>`)
     .join("");
+  const preferred = bundle.frame?.topics || [];
   ["tl-x", "tl-y", "tl-z"].forEach((id, index) => {
     const previous = $(id).value;
+    const fallback = bundle.topics[Math.min(index, bundle.topics.length - 1)].code;
     $(id).innerHTML = options;
-    $(id).value = bundle.topics.some((t) => t.code === previous)
-      ? previous
-      : bundle.topics[Math.min(index, bundle.topics.length - 1)].code;
+    // A selection the reader made themselves survives a change of term where the subject
+    // still exists. One left over from another term's default must not: it is nobody's
+    // choice, and carrying it across silently replaces this term's spanning frame with a
+    // collapsed one.
+    const keep = state.tlChosenFrame && bundle.topics.some((t) => t.code === previous);
+    $(id).value = keep ? previous : preferred[index] || fallback;
   });
+}
+
+/** How much of the main space three subjects cover between them.
+ *
+ * The determinant of their three directions: 1 when mutually perpendicular, 0 when they
+ * all describe the same division. This is what decides whether the view is a cloud or a
+ * streak, and the reader is free to pick three that collapse — so it is recomputed for
+ * whatever they chose rather than only published for the default. */
+function frameSpan(chosen) {
+  const m = chosen.map((t) => t.direction);
+  if (m.some((row) => !row || row.some((v) => v == null))) return null;
+  return Math.abs(
+    m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1]) -
+    m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0]) +
+    m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0])
+  );
+}
+
+/** Which of the main axes a subject most nearly is. */
+function nearestComponent(topic) {
+  if (!topic.direction || topic.direction.some((v) => v == null)) return null;
+  const k = topic.direction.reduce(
+    (best, v, i) => (Math.abs(v) > Math.abs(topic.direction[best]) ? i : best),
+    0
+  );
+  return { axis: k + 1, weight: Math.abs(topic.direction[k]) };
 }
 
 /** Group membership and name per member, for whichever term is showing. */
@@ -624,23 +676,46 @@ function drawTopicFrame() {
     a, b, r: correlation(points.map((p) => p.raw[a]), points.map((p) => p.raw[b])),
   }));
   const tightest = pairs.reduce((x, y) => (Math.abs(y.r) > Math.abs(x.r) ? y : x));
-  const relation = Math.abs(tightest.r) >= 0.8
-    ? `Positions on ${chosen[tightest.a].label} and ${chosen[tightest.b].label} move almost
-       in lockstep (r = ${tightest.r.toFixed(2)}): one division runs through both subjects,
-       which is why the cloud is a streak rather than a cube. That recurrence is a finding,
-       not a drawing error — Parliament mostly splits the same way whatever the topic.`
-    : Math.abs(tightest.r) >= 0.5
-    ? `The closest pair, ${chosen[tightest.a].label} and ${chosen[tightest.b].label}, are
-       related but not the same division (r = ${tightest.r.toFixed(2)}).`
-    : `No two of these subjects divide members the same way (strongest pairing
-       r = ${tightest.r.toFixed(2)}), so the frame really does have three directions.`;
+  const span = frameSpan(chosen);
+  const isDefault = (bundle.frame?.topics || []).every((code) =>
+    chosen.some((t) => t.code === code)
+  );
+
+  // The one number that says whether this frame is a cloud or a streak. Three subjects
+  // that all follow the chamber's main division draw it three times over, and the view
+  // then shows less than the political landscape does, not more.
+  const quality = span == null
+    ? ""
+    : span >= 0.3
+    ? `These three between them cover <b>${span.toFixed(2)}</b> of the political space
+       (1.00 would be three subjects dividing members in three unrelated ways), so the
+       cloud has genuine depth: each axis is showing a different disagreement.`
+    : span >= 0.12
+    ? `These three cover <b>${span.toFixed(2)}</b> of the political space, so they overlap
+       substantially — the cloud leans along one direction because these subjects largely
+       share a division.`
+    : `<b>These three barely span the space (${span.toFixed(2)} of 1.00.)</b> They all
+       follow much the same division, so the view is drawing one disagreement three times
+       and the cloud collapses to a streak.${
+         isDefault ? "" : " The subjects offered by default span it better."
+       }`;
+
+  const lockstep = Math.abs(tightest.r) >= 0.8
+    ? ` ${escape(chosen[tightest.a].label)} and ${escape(chosen[tightest.b].label)} move
+        almost in lockstep (r = ${tightest.r.toFixed(2)}).`
+    : "";
 
   $("tl-caveat").innerHTML =
     `${num(points.length)} members have a position on all three subjects. Each axis is the
      first component of that subject's votes alone, accounting for
      ${chosen.map((t) => `${pct(t.explained_variance)} of the disagreement on ${escape(t.label)}`).join(", ")}.
      Each is scaled to its own spread, so the shape shows how the three subjects relate,
-     not which of them divides Parliament most. ${relation}`;
+     not which of them divides Parliament most. ${quality}${lockstep}
+     ${isDefault
+        ? `<br>These are the default three, chosen because their axes come closest to
+           perpendicular. Picking the busiest subjects instead would collapse the view:
+           in most terms they all follow the chamber's main division.`
+        : ""}`;
 
   if (!window.deck) {
     $("tl-wrap").innerHTML =
@@ -727,27 +802,33 @@ function drawTopicFrame() {
 
 function renderTopicAxisList(bundle) {
   const meta = state.topicAxes?.method || {};
+  const framing = new Set(bundle.frame?.topics || []);
   $("tl-note").innerHTML =
     `${bundle.topics.length} subjects with at least ${num(meta.min_votes || 40)} verified
      votes and ${num(meta.min_members || 100)} members voting. "Explains" is how much of
-     the disagreement on that subject its axis accounts for; "follows the main axis" is
-     how closely a member's place on it tracks their place in the
-     <a href="#/landscape">overall landscape</a>. Select a subject for its distribution
-     and the texts that anchor each end.`;
+     the disagreement on that subject its axis accounts for. "Nearest main axis" says which
+     of the <a href="#/axes">three axes of the overall landscape</a> that subject most
+     nearly <em>is</em> — most subjects turn out to be the first one over again, which is
+     why the three marked <span class="badge">frame</span> are the default: their axes come
+     closest to perpendicular. Select a subject for its distribution and the texts that
+     anchor each end.`;
 
   $("tl-list").innerHTML = `<table>
     <thead><tr><th>Subject</th><th class="num">Votes</th><th class="num">Members</th>
-      <th class="num">Explains</th><th class="num">Follows the main axis</th></tr></thead>
+      <th class="num">Explains</th><th class="num">Nearest main axis</th></tr></thead>
     <tbody>${bundle.topics
-      .map(
-        (t) => `<tr data-code="${t.code}"${t.code === state.tlTopic ? ' class="chosen"' : ""}>
-          <td><a href="#/topiclandscape/${encodeURIComponent(t.code)}">${escape(t.label)}</a></td>
+      .map((t) => {
+        const near = nearestComponent(t);
+        return `<tr data-code="${t.code}"${t.code === state.tlTopic ? ' class="chosen"' : ""}>
+          <td><a href="#/topiclandscape/${encodeURIComponent(t.code)}">${escape(t.label)}</a>${
+            framing.has(t.code) ? ' <span class="badge">frame</span>' : ""
+          }</td>
           <td class="num">${num(t.votes)}</td><td class="num">${num(t.members)}</td>
           <td class="num">${pct(t.explained_variance)}</td>
           <td class="num">${
-            t.global_alignment == null ? "—" : Math.abs(t.global_alignment).toFixed(2)
-          }</td></tr>`
-      )
+            near ? `axis ${near.axis} <span class="note">(${near.weight.toFixed(2)})</span>` : "—"
+          }</td></tr>`;
+      })
       .join("")}</tbody></table>`;
   // The whole row is the target, not just the link in it: a 5-column table whose only
   // hit area is eleven characters of text is a worse list than a plain one.
@@ -803,10 +884,11 @@ function renderTopicAxisDetail(bundle, code) {
     <p class="variance">${num(topic.votes)} verified roll-call votes,
       ${num(topic.members)} members. This axis accounts for ${pct(topic.explained_variance)}
       of the disagreement among those votes${
-        topic.global_alignment == null
-          ? ""
-          : `, and a member's place on it tracks their place in the overall landscape at
-             r = ${topic.global_alignment.toFixed(2)}`
+        nearestComponent(topic)
+          ? `, and of the three axes of the overall landscape it lies closest to
+             axis ${nearestComponent(topic).axis}
+             (${nearestComponent(topic).weight.toFixed(2)} of its direction)`
+          : ""
       }.
       <a href="#/topic/${encodeURIComponent(topic.code)}">Everything about this theme →</a></p>
     ${ridgeline(values, {

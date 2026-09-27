@@ -24,6 +24,7 @@ an abstention as a neutral position rather than as missing data.
 """
 
 import json
+from itertools import combinations
 from pathlib import Path
 
 import duckdb
@@ -314,6 +315,9 @@ def topics(con) -> None:
 TOPIC_MIN_VOTES = 40
 TOPIC_MIN_MEMBERS = 100
 TOPIC_MIN_GROUP = 5
+# A subject may carry an axis on 40 votes but should not be proposed as one of the three
+# framing a 3D view on that evidence. The default frame draws from a higher bar.
+FRAME_MIN_VOTES = 150
 # More anchors than any view shows: amendments to one report share a procedure title, so
 # publishing deduplicates these down to a handful of genuinely different texts.
 ANCHORS_PER_END = 16
@@ -323,6 +327,36 @@ def _finite(value: float) -> float | None:
     """None rather than NaN: a NaN reaches the published JSON as the literal `NaN`, which
     is not JSON, and takes the whole bundle down with it."""
     return None if value is None or not np.isfinite(value) else round(float(value), 4)
+
+
+def _direction(space: np.ndarray, score: np.ndarray) -> np.ndarray:
+    """Where a topic axis points in the main three-component space, as a unit vector.
+
+    Least squares rather than three separate correlations: the global components are
+    uncorrelated over a whole term but not over the subset of members who voted on one
+    subject, and marginal correlations on that subset can sum to more than the whole.
+    Coefficients are standardised so no component wins for being on a larger scale.
+    """
+    centred = space - space.mean(axis=0)
+    beta, *_ = np.linalg.lstsq(centred, score - score.mean(), rcond=None)
+    beta = beta * centred.std(axis=0)
+    norm = float(np.linalg.norm(beta))
+    return beta / norm if norm else np.zeros(N_COMPONENTS)
+
+
+def _span(directions: list[np.ndarray]) -> float:
+    """How much of the main space three topic axes between them cover.
+
+    The determinant of the three unit directions: 1 when they are mutually
+    perpendicular, 0 when they are coplanar or collinear. This is the number that decides
+    whether a 3D frame is a cloud or a streak — three subjects that all follow the
+    chamber's first axis plot the same division three times over.
+
+    Not to be confused with how much of member position the three could *reconstruct*:
+    least squares can recover a lot from a badly conditioned basis by amplifying small
+    differences, but no amount of amplification makes a collapsed picture readable.
+    """
+    return float(abs(np.linalg.det(np.array(directions))))
 
 
 def topic_axes(con) -> dict:
@@ -357,9 +391,9 @@ def topic_axes(con) -> dict:
     ).fetchall()
 
     reference = {
-        (term, member): pc1
-        for term, member, pc1 in con.execute(
-            "SELECT term, member_id, pc1 FROM mep_positions"
+        (term, member): np.array(components)
+        for term, member, *components in con.execute(
+            "SELECT term, member_id, pc1, pc2, pc3 FROM mep_positions"
         ).fetchall()
     }
     group_of = {
@@ -375,7 +409,13 @@ def topic_axes(con) -> dict:
             "topic_axes",
             "term INTEGER, theme_code VARCHAR, theme_label VARCHAR, votes INTEGER,"
             " members INTEGER, explained_variance DOUBLE, global_alignment DOUBLE,"
-            " support_correlation DOUBLE, low_group VARCHAR, high_group VARCHAR",
+            " support_correlation DOUBLE, low_group VARCHAR, high_group VARCHAR,"
+            " dir1 DOUBLE, dir2 DOUBLE, dir3 DOUBLE",
+        ),
+        (
+            # The three subjects proposed as a default frame, and how well they span.
+            "topic_frame",
+            "term INTEGER, slot INTEGER, theme_code VARCHAR, span DOUBLE",
         ),
         ("topic_positions", "term INTEGER, theme_code VARCHAR, member_id BIGINT, score DOUBLE"),
         (
@@ -390,6 +430,7 @@ def topic_axes(con) -> dict:
         con.execute(f"CREATE TABLE {table} ({columns})")
 
     kept, skipped = 0, 0
+    directions: dict[int, dict[str, tuple]] = {}
     for term, code, label, _ in themes:
         rows = con.execute(
             """
@@ -418,10 +459,10 @@ def topic_axes(con) -> dict:
         score = pca.fit_transform(matrix)[:, 0]
         loading = pca.components_[0]
 
-        global_pc1 = np.array([reference.get((term, int(m)), 0.0) for m in members])
-        alignment = (
-            float(np.corrcoef(score, global_pc1)[0, 1]) if global_pc1.any() else 0.0
+        space = np.array(
+            [reference.get((term, int(m)), np.zeros(N_COMPONENTS)) for m in members]
         )
+        alignment = float(np.corrcoef(score, space[:, 0])[0, 1]) if space.any() else 0.0
         flip = (
             alignment < 0
             if abs(alignment) >= 0.1
@@ -445,12 +486,18 @@ def topic_axes(con) -> dict:
         low = min(means, key=means.get) if means else None
         high = max(means, key=means.get) if means else None
 
+        # Which way this subject's axis points in the main space. Needed to choose a
+        # frame that spans it rather than three views of the same division.
+        pointing = _direction(space, score) if space.any() else np.zeros(N_COMPONENTS)
+        directions.setdefault(term, {})[code] = (pointing, len(votes))
+
         con.execute(
-            "INSERT INTO topic_axes VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO topic_axes VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             [
                 term, code, label, len(votes), len(members),
                 float(pca.explained_variance_ratio_[0]), _finite(alignment),
                 _finite(support), low, high,
+                *(_finite(v) for v in pointing),
             ],
         )
         _insert(
@@ -485,6 +532,8 @@ def topic_axes(con) -> dict:
         _insert(con, "topic_axis_votes", anchors, 8)
         kept += 1
 
+    frames = _choose_frames(con, directions)
+
     naive = con.execute(
         "SELECT count(*) FROM topic_axes WHERE abs(support_correlation) < 0.7"
     ).fetchone()[0]
@@ -497,9 +546,55 @@ def topic_axes(con) -> dict:
         "themes_skipped": skipped,
         "min_votes": TOPIC_MIN_VOTES,
         "min_members": TOPIC_MIN_MEMBERS,
+        "frame_min_votes": FRAME_MIN_VOTES,
+        "frames": frames,
         "orientation": "aligned with the term's first global component; "
                        "the most influential vote made positive where |r| < 0.1",
     }
+
+
+def _choose_frames(con, directions: dict[int, dict[str, tuple]]) -> dict:
+    """Pick the three subjects that best span the main space, per term.
+
+    Choosing the busiest subjects instead is the obvious default and the wrong one: in
+    the 9th term the three with most votes all follow the chamber's first axis, so the
+    3D view plots that one division three times and the other two components never
+    appear at all. Spanning is the property a frame needs; volume is a tie-breaker the
+    vote floor already handles.
+
+    Exhaustive over the eligible subjects — a few thousand triples — because a greedy
+    walk down the components does measurably worse, and on the 8th term worse than not
+    choosing at all.
+    """
+    chosen = {}
+    for term, axes in directions.items():
+        pool = [code for code, (_, votes) in axes.items() if votes >= FRAME_MIN_VOTES]
+        if len(pool) < N_COMPONENTS:
+            pool = list(axes)
+        if len(pool) < N_COMPONENTS:
+            continue
+        best = max(
+            combinations(pool, N_COMPONENTS),
+            key=lambda triple: _span([axes[c][0] for c in triple]),
+        )
+        span = _span([axes[c][0] for c in best])
+        # Each slot takes the subject nearest that component, so the frame stays
+        # recognisable against the main landscape rather than arriving in arbitrary order.
+        remaining, order = list(best), []
+        for slot in range(N_COMPONENTS):
+            pick = max(remaining, key=lambda c: abs(axes[c][0][slot]))
+            order.append(pick)
+            remaining.remove(pick)
+        _insert(
+            con,
+            "topic_frame",
+            [[term, slot, code, span] for slot, code in enumerate(order)],
+            4,
+        )
+        chosen[str(term)] = {"topics": order, "span": round(span, 4)}
+        print(f"    T{term} frame spans {span:.2f} of the main space: "
+              + " / ".join(order))
+    return chosen
 
 
 def window_positions(data_dir: Path, start: str, end: str) -> None:

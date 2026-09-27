@@ -44,12 +44,25 @@ row. Batched into 500-row statements, the whole `mine` stage dropped from over 1
 to **1m26s**, topic axes included — so the new work costs less than the old bookkeeping
 did.
 
+## Frame selection (added after review)
+Each topic axis is also placed as a direction in the main three-component space, by least
+squares rather than three marginal correlations — the components are uncorrelated over a
+whole term but not over the subset of members who voted on one subject.
+
+The default frame is then the triple of those directions coming closest to perpendicular,
+exhaustively over subjects with at least `FRAME_MIN_VOTES` (150) verified votes. Greedy
+selection down the components was tried and is worse — on the 8th term worse than not
+choosing at all — and the search is only a few thousand triples.
+
+Span (|det| of the three unit directions) rose from 0.31 / 0.01 / 0.07 to 0.47 / 0.45 /
+0.19 for terms 8 / 9 / 10.
+
 ## Finding
-In the 9th and 10th terms nearly every subject's axis correlates 0.93–0.98 with the first
-global component: one cleavage runs through almost every subject. Choosing three
-decorrelated subjects for the 3D frame is therefore only possible by descending into
-thinly-attested themes, so the frame defaults to the best-attested subjects and reports
-the correlation rather than hiding it behind a subject picked to look independent.
+One cleavage runs through almost every subject. In the 9th term 33 of 38 subjects lie
+closest to the first main axis, five to the second, **none** to the third. The third axis
+is therefore not any policy area's internal disagreement, and no choice of subjects can
+frame it — which bounds what this view can ever be, and is stated on the methodology page
+rather than left for a reader to infer from a thin-looking cloud.
 
 ## Acceptance criteria
 - One axis per sufficiently-attested theme per term, with member scores published.

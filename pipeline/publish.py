@@ -291,13 +291,22 @@ def _write_topic_axes(con, out: Path, terms: list[int]) -> None:
             """
             SELECT theme_code AS code, theme_label AS label, votes, members,
                    round(explained_variance, 4) AS explained_variance,
-                   global_alignment, support_correlation, low_group, high_group
+                   global_alignment, support_correlation, low_group, high_group,
+                   -- Where this subject's axis points in the main three-component
+                   -- space. What lets a reader's own choice of three be judged for
+                   -- whether it spans that space or collapses onto one division.
+                   [dir1, dir2, dir3] AS direction
             FROM topic_axes WHERE term = ? ORDER BY votes DESC
             """,
             [term],
         )
         if not axes:
             continue
+        frame = _rows(
+            con,
+            "SELECT theme_code AS code, span FROM topic_frame WHERE term = ? ORDER BY slot",
+            [term],
+        )
         # One member list per term, so each theme ships an array of numbers rather than
         # repeating identifiers 30-odd times over.
         member_ids = sorted(
@@ -312,7 +321,16 @@ def _write_topic_axes(con, out: Path, terms: list[int]) -> None:
                 for m in member_ids
             ]
             axis["ends"] = anchors.get((term, axis["code"]), {"negative": [], "positive": []})
-        payload["terms"][str(term)] = {"members": member_ids, "topics": axes}
+        payload["terms"][str(term)] = {
+            "members": member_ids,
+            "topics": axes,
+            # The default three: chosen to span the main space, not for being the
+            # busiest. The busiest all follow the same division in most terms.
+            "frame": {
+                "topics": [row["code"] for row in frame],
+                "span": frame[0]["span"] if frame else None,
+            },
+        }
 
     _write(out, "topic-axes.json", payload)
 
