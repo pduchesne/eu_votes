@@ -9,8 +9,31 @@ configuration.
 The licence file travels with the data, because ODbL asks that it does.
 """
 
+import hashlib
 import shutil
 from pathlib import Path
+
+# Assets whose URL carries a content hash when deployed.
+FINGERPRINTED = ("app.js", "styles.css")
+
+
+def _fingerprint(ui: Path) -> None:
+    """Stamp a content hash onto the script and stylesheet URLs.
+
+    GitHub Pages serves everything with `max-age=600` and no fingerprinting, so after a
+    deploy a visitor can hold a fresh index.html and a stale app.js — the new navigation
+    appears but does nothing, because the running module has never heard of the view. A
+    browser tab left open across a deploy never re-fetches at all.
+
+    The hash goes in only when the deployable tree is assembled, so `ui/` keeps plain
+    filenames and serving the repository directly still works.
+    """
+    index = ui / "index.html"
+    html = index.read_text()
+    for asset in FINGERPRINTED:
+        digest = hashlib.sha256((ui / asset).read_bytes()).hexdigest()[:10]
+        html = html.replace(f'"{asset}"', f'"{asset}?v={digest}"')
+    index.write_text(html)
 
 
 def build(data_dir: Path, out: Path = Path("site")) -> Path:
@@ -24,6 +47,7 @@ def build(data_dir: Path, out: Path = Path("site")) -> Path:
 
     shutil.copytree(Path("ui"), out / "ui")
     shutil.copytree(published, out / "data" / "published")
+    _fingerprint(out / "ui")
 
     # A root landing page, so the deployed URL works without anyone knowing to add /ui/.
     (out / "index.html").write_text(
