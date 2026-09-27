@@ -25,6 +25,7 @@ const state = {
   // Topic landscape: the bundle, which term's frame is currently drawn, its deck, and the
   // selected subject.
   topicAxes: null, tlDrawn: null, tlDeck: null, tlTopic: null, tlChosenFrame: false,
+  groupDetail: null,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -67,7 +68,7 @@ async function boot() {
 function route() {
   const parts = location.hash.replace("#/", "").split("/");
   const view = parts[0] || "landscape";
-  const known = ["landscape", "topiclandscape", "meps", "member", "axes", "topic", "topics", "stories", "methodology"];
+  const known = ["landscape", "topiclandscape", "meps", "member", "group", "axes", "topic", "topics", "stories", "methodology"];
   const active = known.includes(view) ? view : "landscape";
   known.forEach((name) => ($(`view-${name}`).hidden = name !== active));
   document.querySelectorAll("nav a").forEach((a) =>
@@ -78,6 +79,7 @@ function route() {
   if (active === "axes") renderAxes();
   if (active === "topic") renderTopic(decodeURIComponent(parts.slice(1).join("/")));
   if (active === "member") renderMember(parts[1]);
+  if (active === "group") renderGroup(decodeURIComponent(parts.slice(1).join("/")));
 }
 
 function termOptions(select, onChange) {
@@ -944,6 +946,153 @@ function renderTopicEnd(topic, end, side) {
       .join("")}</ol></div>`;
 }
 
+// ------------------------------------------------------- standing out
+
+/** One subject as a horizontal bar, with whoever it is about marked against the field.
+ *
+ * A position on a topic axis means nothing on its own — the scale is arbitrary — so the
+ * bar always draws the backdrop first: the span of the whole chamber, then the band the
+ * comparison group occupies, and only then the mark. What the reader should see is the
+ * distance between the mark and the band, not the number under it.
+ *
+ * `ticks` places the other groups on the same line, which is the backdrop a group page
+ * needs: a group is unusual only relative to the other groups.
+ */
+function standoutBar(row, { colour, at, band, ticks = [] }) {
+  const width = 520, height = 34, pad = 10, mid = 19;
+  const lo = Math.min(row.lo, at, band?.[0] ?? at, ...ticks.map((t) => t.median));
+  const hi = Math.max(row.hi, at, band?.[2] ?? at, ...ticks.map((t) => t.median));
+  const x = (v) => pad + ((v - lo) / (hi - lo || 1)) * (width - 2 * pad);
+  const [r, g, b] = colour;
+
+  const others = ticks
+    .map((t) => {
+      const [tr, tg, tb] = GROUP_COLOUR[t.code] || FALLBACK;
+      return `<line x1="${x(t.median).toFixed(1)}" y1="${mid - 6}"
+                    x2="${x(t.median).toFixed(1)}" y2="${mid + 6}"
+                    stroke="rgb(${tr},${tg},${tb})" stroke-width="2" stroke-opacity="0.45">
+                <title>${escape(groupLabel(t.code))}</title></line>`;
+    })
+    .join("");
+
+  return `<svg class="standout-bar" viewBox="0 0 ${width} ${height}" role="img"
+      aria-label="Position on ${escape(row.label)} against the rest of the chamber">
+    <line class="axis-line" x1="${x(row.lo)}" y1="${mid}" x2="${x(row.hi)}" y2="${mid}"/>
+    <line class="axis-line" x1="${x(row.mid)}" y1="${mid - 8}" x2="${x(row.mid)}" y2="${mid + 8}"
+          stroke-dasharray="2 2"/>
+    ${band
+      ? `<rect x="${x(band[0]).toFixed(1)}" y="${mid - 7}"
+               width="${Math.max(1.5, x(band[2]) - x(band[0])).toFixed(1)}" height="14" rx="3"
+               fill="rgb(${r},${g},${b})" fill-opacity="0.26"/>
+         <line x1="${x(band[1]).toFixed(1)}" y1="${mid - 7}" x2="${x(band[1]).toFixed(1)}"
+               y2="${mid + 7}" stroke="rgb(${r},${g},${b})" stroke-width="1.5"/>`
+      : ""}
+    ${others}
+    <circle cx="${x(at).toFixed(1)}" cy="${mid}" r="5.5" fill="rgb(${r},${g},${b})"
+            stroke="var(--panel)" stroke-width="1.6"/>
+    <text class="tick" x="${pad}" y="${height - 2}">${escape(groupTag(row.low_end || ""))}</text>
+    <text class="tick" x="${width - pad}" y="${height - 2}" text-anchor="end">${escape(
+      groupTag(row.high_end || "")
+    )}</text>
+  </svg>`;
+}
+
+/** Why this subject is on the list, in words rather than in sigmas. */
+function standoutLean(row, self, kind) {
+  const size = Math.abs(row.departure).toFixed(1);
+  const usual = kind === "member"
+    ? `${size}× their usual distance from ${escape(groupLabel(self))}`
+    : `${size}× its usual distance from the other groups`;
+  const direction = row.toward === self
+    ? `further out than ${kind === "member" ? "they" : "it"} usually ${
+        kind === "member" ? "sit" : "sits"
+      }`
+    : `${kind === "member" ? "sits" : "sits"} nearer to ${escape(groupLabel(row.toward))}
+       than ${kind === "member" ? "they" : "it"} usually ${kind === "member" ? "do" : "does"}`;
+  return `${direction} — ${usual}`;
+}
+
+function renderStandouts(rows, { self, kind, colour, title, note }) {
+  if (!rows?.length) {
+    return `<p class="note">No subject where ${
+      kind === "member" ? "they sit" : "this group sits"
+    } notably apart from ${kind === "member" ? "their group" : "its own usual position"}.</p>`;
+  }
+  return `<div class="standouts">
+    <h3>${title}</h3>
+    <p class="note">${note}</p>
+    ${rows
+      .map((row) => {
+        const at = kind === "member" ? row.score : row.median;
+        const band = kind === "member" ? [row.q1, row.q2, row.q3] : [row.q1, row.median, row.q3];
+        return `<div class="standout">
+          <p class="head"><a href="#/topic/${encodeURIComponent(row.code)}">${escape(row.label)}</a>
+            <span class="lean">${standoutLean(row, self, kind)}</span></p>
+          ${standoutBar(row, {
+            colour,
+            at,
+            band,
+            ticks: kind === "group" ? row.field || [] : [],
+          })}
+        </div>`;
+      })
+      .join("")}
+  </div>`;
+}
+
+// ---------------------------------------------------------------- one group
+
+async function renderGroup(code) {
+  if (!state.groupDetail) state.groupDetail = await load("groups-detail.json").catch(() => ({}));
+  const label = groupLabel(code);
+  const terms = state.groups.filter((g) => g.code === code);
+  if (!terms.length) {
+    $("group-head").innerHTML = `<p class="note">No published record for that group.</p>`;
+    $("group-terms").innerHTML = "";
+    return;
+  }
+  const colour = GROUP_COLOUR[code] || FALLBACK;
+  const full = terms[0].label || label;
+  $("group-head").innerHTML = `<div class="group-head">
+    <span class="chip" style="background:rgb(${colour.join(",")})"></span>
+    <div>
+      <h1>${escape(full)}</h1>
+      <p class="note">${escape(label)} · sat in ${terms
+        .map((t) => termLabel(t.term))
+        .join(", ")}</p>
+    </div></div>`;
+
+  const detail = state.groupDetail[code] || {};
+  $("group-terms").innerHTML = terms
+    .slice()
+    .sort((a, b) => b.term - a.term)
+    .map((t) => {
+      const rows = detail[String(t.term)] || [];
+      return `<section class="term-block">
+        <h2>${termLabel(t.term)}</h2>
+        <div class="stats">
+          <span class="stat"><b>${num(t.meps)}</b><span>members</span></span>
+          <span class="stat"><b>${pct(t.cohesion)}</b><span>voted with the group majority,
+            over ${num(t.votes_cast)} ballots</span></span>
+          <span class="stat"><b>${pct(t.main_cohesion)}</b><span>on substantive votes
+            ${t.main_cohesion == null ? "(not identifiable this term)" : ""}</span></span>
+        </div>
+        ${renderStandouts(rows, {
+          self: code,
+          kind: "group",
+          colour,
+          title: "Where it departs from its own line",
+          note: `A group at one end of the chamber sits at that end on nearly every
+            subject, so the subjects listed are not where it is most extreme — they are
+            where it is least like itself. Each bar spans the chamber; the coloured band
+            is this group's middle half, the small marks are the other groups, and the
+            dashed line is the chamber's midpoint.`,
+        })}
+      </section>`;
+    })
+    .join("");
+}
+
 // ---------------------------------------------------------------- one member
 
 async function renderMember(id) {
@@ -974,7 +1123,9 @@ async function renderMember(id) {
             r.votes_eligible
           )} roll-call votes</span></span>`;
       return `<section class="term-block">
-        <h2>${termLabel(term)} — ${escape(groupLabel(r.group_code))}</h2>
+        <h2>${termLabel(term)} — <a href="#/group/${encodeURIComponent(r.group_code)}">${escape(
+          groupLabel(r.group_code)
+        )}</a></h2>
         <div class="stats">
           ${participation}
           <span class="stat"><b>${pct(r.loyalty)}</b><span>voted with their group,
@@ -985,6 +1136,17 @@ async function renderMember(id) {
               : `on ${num(r.main_votes_cast)} substantive votes`
           }</span></span>
         </div>
+        ${renderStandouts(r.standout, {
+          self: r.group_code,
+          kind: "member",
+          colour: GROUP_COLOUR[r.group_code] || FALLBACK,
+          title: "Where they sit apart from their group",
+          note: `Their position on each subject's own axis, against the people they
+            normally vote with. These are not the subjects where they are furthest from
+            the chamber — that would only restate which group they joined — but where they
+            are furthest from their own usual place within it. Each bar spans the chamber;
+            the shaded band is the middle half of their group, and the dot is them.`,
+        })}
         ${renderDivergence(r)}
       </section>`;
     })
@@ -1034,7 +1196,9 @@ async function renderTopic(code) {
   $("topic-groups").innerHTML = theme.groups
     .map(
       (g) => `<div class="support-row">
-        <span class="name">${escape(groupLabel(g.code))}</span>
+        <span class="name"><a href="#/group/${encodeURIComponent(g.code)}">${escape(
+          groupLabel(g.code)
+        )}</a></span>
         <span class="bar"><i style="width:${(g.support * 100).toFixed(0)}%;
           background:rgb(${(GROUP_COLOUR[g.code] || FALLBACK).join(",")})"></i></span>
         <span class="value">${pct(g.support)}</span>
@@ -1307,6 +1471,13 @@ function groupLabel(code) {
   return match?.short_label || match?.label || code;
 }
 
+/** For places with no room to spare, such as the ends of a bar. Most short labels are
+ *  already brief; a couple ("Identity and Democracy") are not, and fall back to the code. */
+function groupTag(code) {
+  const label = groupLabel(code);
+  return label.length > 12 ? code : label;
+}
+
 function renderLegend(mode, countries, points) {
   const keys = mode === "country" ? countries : [...new Set(points.map((p) => p.group))].sort();
   const existing = $("deck-wrap").querySelector(".legend");
@@ -1317,8 +1488,13 @@ function renderLegend(mode, countries, points) {
     .map((key) => {
       const sample = points.find((p) => (mode === "country" ? p.country : p.group) === key);
       const [r, g, b] = colourFor(sample, mode, countries);
-      const label = mode === "country" ? key : groupLabel(key);
-      return `<div><span class="swatch" style="background:rgb(${r},${g},${b})"></span>${label}</div>`;
+      const swatch = `<span class="swatch" style="background:rgb(${r},${g},${b})"></span>`;
+      // Groups lead somewhere; countries do not have a page of their own.
+      return mode === "country"
+        ? `<div>${swatch}${escape(key)}</div>`
+        : `<div>${swatch}<a href="#/group/${encodeURIComponent(key)}">${escape(
+            groupLabel(key)
+          )}</a></div>`;
     })
     .join("");
   $("deck-wrap").appendChild(legend);

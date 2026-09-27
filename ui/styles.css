@@ -181,6 +181,22 @@ a { color: var(--accent); }
   border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
 }
 
+.standouts { margin-top: 1rem; }
+.standouts > h3 { font-size: 0.9rem; margin: 0 0 0.3rem; }
+.standouts > .note { margin: 0 0 0.8rem; }
+.standout { margin-bottom: 0.7rem; max-width: 560px; }
+.standout .head { margin: 0; font-size: 0.88rem; display: flex; flex-wrap: wrap; gap: 0.1rem 0.5rem; align-items: baseline; }
+.standout .lean { font-size: 0.78rem; color: var(--muted); }
+.standout-bar { display: block; width: 100%; height: auto; }
+.standout-bar .axis-line { stroke: var(--line); stroke-width: 1.5; }
+.standout-bar .tick { font-size: 8.5px; fill: var(--muted); }
+
+.group-head { display: flex; gap: 0.9rem; align-items: center; margin-bottom: 1.2rem; }
+.group-head h1 { margin: 0 0 0.1rem; }
+.group-head .chip { width: 30px; height: 30px; border-radius: 6px; flex: none; }
+.legend a { text-decoration: none; color: inherit; }
+.legend a:hover { text-decoration: underline; }
+
 #tl-wrap {
   position: relative; height: 62vh; min-height: 380px;
   border: 1px solid var(--line); border-radius: var(--radius);

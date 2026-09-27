@@ -100,7 +100,198 @@ DIVERGENCE_MARGIN = 0.15
 DIVERGENCE_FLOOR = 0.10
 
 
-def _write_member_pages(con, out: Path) -> None:
+# A subject only qualifies as one someone "stands out on" if its axis rests on enough
+# votes to be worth standing out on, and if the comparison group is big enough to have a
+# spread at all.
+STANDOUT_MIN_VOTES = 100
+STANDOUT_MIN_GROUP = 8
+STANDOUT_SHOWN = 5
+# How far from their own usual position a subject must sit to be worth naming, measured
+# in that member's or group's own spread across subjects. Self-calibrating on purpose: a
+# group is compared against eight or nine peers and a member against several hundred, so
+# a fixed number of standard deviations would mean two different things on the two pages.
+STANDOUT_MIN_DEPARTURE = 1.0
+
+# Shared by both standout queries: where each group sits on each topic axis, and the
+# range of the whole chamber, which is the backdrop every bar is drawn against.
+_DISTRIBUTIONS = f"""
+WITH member_group AS (
+    SELECT term, member_id, group_code FROM mep_cohesion
+    WHERE group_code IS NOT NULL AND group_code <> ''
+),
+eligible AS (
+    SELECT term, theme_code, theme_label, low_group, high_group
+    FROM topic_axes WHERE votes >= {STANDOUT_MIN_VOTES}
+),
+chamber AS (
+    -- 5th to 95th percentile, not the extremes: one outlier would otherwise squash
+    -- every bar into its middle.
+    SELECT term, theme_code,
+           quantile_cont(score, 0.05) AS lo,
+           quantile_cont(score, 0.95) AS hi,
+           median(score) AS mid
+    FROM topic_positions GROUP BY 1, 2
+),
+grp AS (
+    SELECT tp.term, tp.theme_code, mg.group_code, count(*) AS n,
+           avg(tp.score) AS mean, stddev_samp(tp.score) AS sd,
+           quantile_cont(tp.score, 0.25) AS q1, median(tp.score) AS q2,
+           quantile_cont(tp.score, 0.75) AS q3
+    FROM topic_positions tp
+    JOIN member_group mg ON mg.term = tp.term AND mg.member_id = tp.member_id
+    GROUP BY 1, 2, 3
+)
+"""
+
+
+def _member_standouts(con) -> dict:
+    """The subjects on which a member sits furthest from their own group.
+
+    Measured against their group rather than against the chamber deliberately: distance
+    from the chamber is very largely a restatement of which group they joined, and would
+    hand every member of a group the same five subjects. Distance from the people they
+    normally vote with is the part that is about them.
+
+    This is a different question from the divergence list already on the page, which
+    counts votes cast against the group majority. A member can follow their group on
+    every division and still sit at its edge, and vice versa.
+    """
+    rows = _rows(
+        con,
+        f"""
+        {_DISTRIBUTIONS},
+        placed AS (
+            SELECT tp.member_id, tp.term, e.theme_code AS code, e.theme_label AS label,
+                   round(tp.score, 2) AS score,
+                   (tp.score - g.mean) / nullif(g.sd, 0) AS z,
+                   round(c.lo, 2) AS lo, round(c.hi, 2) AS hi, round(c.mid, 2) AS mid,
+                   round(g.q1, 2) AS q1, round(g.q2, 2) AS q2, round(g.q3, 2) AS q3,
+                   mg.group_code, e.low_group, e.high_group
+            FROM topic_positions tp
+            JOIN member_group mg ON mg.term = tp.term AND mg.member_id = tp.member_id
+            JOIN eligible e ON e.term = tp.term AND e.theme_code = tp.theme_code
+            JOIN grp g ON g.term = tp.term AND g.theme_code = tp.theme_code
+                       AND g.group_code = mg.group_code
+            JOIN chamber c ON c.term = tp.term AND c.theme_code = tp.theme_code
+            WHERE g.n >= {STANDOUT_MIN_GROUP}
+        ),
+        -- Against their own habit, not against zero. Someone who sits at the edge of
+        -- their group on everything is not telling you anything by sitting at its edge
+        -- here too; the subjects worth naming are the ones where they depart from their
+        -- own usual distance. Two steps, because a window function may not be nested
+        -- inside another window's ordering.
+        based AS (
+            SELECT *, avg(z) OVER (PARTITION BY member_id, term) AS baseline,
+                   stddev_samp(z) OVER (PARTITION BY member_id, term) AS spread
+            FROM placed
+        ),
+        scored AS (
+            SELECT *, (z - baseline) / nullif(spread, 0) AS departure,
+                   row_number() OVER (
+                       PARTITION BY member_id, term
+                       ORDER BY abs(z - baseline) / nullif(spread, 0) DESC
+                   ) AS rank
+            FROM based
+        )
+        SELECT member_id, term, code, label, score, round(z, 2) AS z,
+               round(baseline, 2) AS baseline, round(departure, 2) AS departure,
+               lo, hi, mid, q1, q2, q3, group_code,
+               CASE WHEN z >= baseline THEN high_group ELSE low_group END AS toward,
+               -- Which group sits at each end, so the bar can label its own scale.
+               low_group AS low_end, high_group AS high_end
+        FROM scored
+        WHERE rank <= {STANDOUT_SHOWN} AND abs(departure) >= {STANDOUT_MIN_DEPARTURE}
+        ORDER BY member_id, term, rank
+        """,
+    )
+    standouts: dict[tuple, list] = {}
+    for row in rows:
+        key = (row.pop("member_id"), row.pop("term"))
+        standouts.setdefault(key, []).append(row)
+    print(f"    standouts: {len(standouts):,} member-terms with a subject at least"
+          f" {STANDOUT_MIN_DEPARTURE}x their own spread from where they usually sit")
+    return standouts
+
+
+def _write_group_pages(con, out: Path) -> None:
+    """Per group: where it sits apart from the rest of the chamber's groups.
+
+    The comparison here is between groups, not within one: a group stands out on a
+    subject when its position is unlike the other groups' positions on that subject. The
+    other groups' medians ship alongside, because "unusual" means nothing without them.
+    """
+    rows = _rows(
+        con,
+        f"""
+        {_DISTRIBUTIONS},
+        spread AS (
+            SELECT term, theme_code, avg(mean) AS mean_of_means,
+                   stddev_samp(mean) AS sd_of_means, count(*) AS groups
+            FROM grp WHERE n >= {STANDOUT_MIN_GROUP} GROUP BY 1, 2
+        ),
+        placed AS (
+            SELECT g.term, g.group_code, e.theme_code AS code, e.theme_label AS label,
+                   g.n AS meps, round(g.q2, 2) AS median,
+                   round(c.lo, 2) AS lo, round(c.hi, 2) AS hi, round(c.mid, 2) AS mid,
+                   round(g.q1, 2) AS q1, round(g.q3, 2) AS q3,
+                   (g.mean - s.mean_of_means) / nullif(s.sd_of_means, 0) AS z,
+                   e.low_group, e.high_group
+            FROM grp g
+            JOIN eligible e ON e.term = g.term AND e.theme_code = g.theme_code
+            JOIN chamber c ON c.term = g.term AND c.theme_code = g.theme_code
+            JOIN spread s ON s.term = g.term AND s.theme_code = g.theme_code
+            WHERE g.n >= {STANDOUT_MIN_GROUP} AND s.groups >= 4
+        ),
+        -- A group at one end of the chamber's main division is at that end on nearly
+        -- every subject, so ranking by raw distance returns five ways of saying so.
+        -- Ranking against the group's own average distance returns the subjects where it
+        -- departs from its own line.
+        based AS (
+            SELECT *, avg(z) OVER (PARTITION BY term, group_code) AS baseline,
+                   stddev_samp(z) OVER (PARTITION BY term, group_code) AS spread
+            FROM placed
+        ),
+        scored AS (
+            SELECT *, (z - baseline) / nullif(spread, 0) AS departure,
+                   row_number() OVER (
+                       PARTITION BY term, group_code
+                       ORDER BY abs(z - baseline) / nullif(spread, 0) DESC
+                   ) AS rank
+            FROM based
+        )
+        SELECT term, group_code, code, label, meps, median, lo, hi, mid, q1, q3,
+               round(z, 2) AS z, round(baseline, 2) AS baseline,
+               round(departure, 2) AS departure,
+               CASE WHEN z >= baseline THEN high_group ELSE low_group END AS toward,
+               low_group AS low_end, high_group AS high_end
+        FROM scored
+        WHERE rank <= {STANDOUT_SHOWN} AND abs(departure) >= {STANDOUT_MIN_DEPARTURE}
+        ORDER BY term, group_code, rank
+        """,
+    )
+
+    # Every group's median on the subjects that matter, so a bar can show the field the
+    # highlighted group stands out from.
+    ticks: dict[tuple, list] = {}
+    for term, code, group_code, median in con.execute(
+        f"""
+        {_DISTRIBUTIONS}
+        SELECT g.term, g.theme_code, g.group_code, round(g.q2, 2)
+        FROM grp g WHERE g.n >= {STANDOUT_MIN_GROUP}
+        """
+    ).fetchall():
+        ticks.setdefault((term, code), []).append({"code": group_code, "median": median})
+
+    groups: dict[str, dict] = {}
+    for row in rows:
+        term, group_code = row.pop("term"), row.pop("group_code")
+        row["field"] = ticks.get((term, row["code"]), [])
+        groups.setdefault(group_code, {}).setdefault(str(term), []).append(row)
+
+    _write(out, "groups-detail.json", groups)
+
+
+def _write_member_pages(con, out: Path, standouts: dict) -> None:
     """One small file per member, so a profile costs a reader only their own page."""
     con.execute(
         """
@@ -187,6 +378,7 @@ def _write_member_pages(con, out: Path) -> None:
             # took part in — a participation rate from it would be meaningless.
             "participation": None if term == 8 or not eligible else round(cast / eligible, 4),
             "divergence": divergence.get((member_id, term), [])[:6],
+            "standout": standouts.get((member_id, term), []),
         }
 
     profiles = {
@@ -649,7 +841,8 @@ def publish(data_dir: Path) -> None:
         {"votes": [[r[0], r[1], r[2], r[3], r[4]] for r in cloud], "themes": index},
     )
 
-    _write_member_pages(con, out)
+    _write_group_pages(con, out)
+    _write_member_pages(con, out, _member_standouts(con))
 
     source = json.loads(
         con.execute("SELECT source FROM _provenance LIMIT 1").fetchone()[0]
