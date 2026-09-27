@@ -99,7 +99,9 @@ def positions(con) -> dict:
         coords[term] = (members, fitted)
         # The loadings say which votes define each axis — the difference between
         # knowing where an MEP sits and being able to say what the axis is about.
-        loadings[term] = (votes, pca.components_)
+        # Held as (votes x components) so the same rotation applies to them as to the
+        # member scores below.
+        loadings[term] = (votes, pca.components_.T)
         meta[term] = {
             "meps": len(members),
             "votes": len(votes),
@@ -127,6 +129,13 @@ def positions(con) -> dict:
             reference_fitted[np.searchsorted(reference_members, shared)],
         )
         coords[term] = (members, fitted @ rotation)
+        # Loadings must be rotated with the scores. They are two halves of one
+        # factorisation: rotating only the members leaves every vote describing the
+        # unrotated axes, so "voting for this moves a member that way" silently becomes
+        # false for every term but the reference. Because the rotation is orthogonal,
+        # applying it to both sides leaves the reconstruction untouched.
+        vote_ids, vote_loadings = loadings[term]
+        loadings[term] = (vote_ids, vote_loadings @ rotation)
         alignment["shared_meps"][str(term)] = int(len(shared))
         print(f"    aligned T{term} onto T{REFERENCE_TERM} using {len(shared)} shared MEPs")
     meta["alignment"] = alignment
@@ -164,8 +173,8 @@ def _write_components(con, loadings: dict) -> None:
         con.executemany(
             "INSERT INTO vote_components VALUES (?, ?, ?, ?, ?)",
             [
-                [term, int(vote_id), float(components[0][i]), float(components[1][i]), float(components[2][i])]
-                for i, vote_id in enumerate(votes)
+                [term, int(vote_id), float(row[0]), float(row[1]), float(row[2])]
+                for vote_id, row in zip(votes, components)
             ],
         )
         total += len(votes)
