@@ -12,6 +12,7 @@
   <a class="brand" href="#/landscape">How the European Parliament votes</a>
   <nav>
     <a href="#/landscape" data-view="landscape">Political landscape</a>
+    <a href="#/topiclandscape" data-view="topiclandscape">Topic landscape</a>
     <a href="#/meps" data-view="meps">Members</a>
     <a href="#/axes" data-view="axes">Axes</a>
     <a href="#/topics" data-view="topics">Topics</a>
@@ -54,6 +55,31 @@
       "right" of zero.
     </p>
     <div id="axis-votes" class="axis-grid"></div>
+  </section>
+
+  <section id="view-topiclandscape" hidden>
+    <h1>The same chamber, with subjects for axes</h1>
+    <p class="lede">
+      The main landscape uses the axes that separate members best, which makes them
+      precise and unnameable. Here each axis is one subject instead — the main line of
+      disagreement among the votes on that subject alone. You choose which three frame
+      the view. An axis still has no inherent direction: what gives an end its meaning is
+      the texts a member sitting there voted <em>for</em>.
+    </p>
+    <div class="controls">
+      <label>Term <select id="tl-term"></select></label>
+      <label>Across <select id="tl-x"></select></label>
+      <label>Up <select id="tl-y"></select></label>
+      <label>Depth <select id="tl-z"></select></label>
+    </div>
+    <div id="tl-wrap"><canvas id="tl-deck"></canvas></div>
+    <p class="caveat" id="tl-caveat"></p>
+    <div id="tl-detail" class="detail" hidden></div>
+
+    <h2>The topic axes</h2>
+    <p class="note" id="tl-note"></p>
+    <div id="tl-list" class="scroll"></div>
+    <div id="tl-topic"></div>
   </section>
 
   <section id="view-meps" hidden>

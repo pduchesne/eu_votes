@@ -15,3 +15,6 @@ requires:
 A user navigates a 3D point cloud where each point is an MEP, positioned by the
 PCA-derived political space. The user can orbit/zoom/pan, filter by group, country, or
 time slice, and click a point to open that MEP's record (UC01).
+
+## Sub-use-cases
+- [UC02.01 — Navigate the Landscape with Subjects as Axes](UC02-explore-political-landscape/UC02.01-topic-framed-landscape.md)

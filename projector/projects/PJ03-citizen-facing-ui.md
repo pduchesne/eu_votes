@@ -5,6 +5,8 @@ status: in-progress
 members:
   - UC01-lookup-mep
   - UC02-explore-political-landscape
+  - UC02.01-topic-framed-landscape
+  - TK21-topic-axes
   - UC04.02-authored-stories
   - FR05-authored-narrative
   - TK19-authored-stories
@@ -48,6 +50,7 @@ bundles directly, so deploying it is copying a directory.
 | View | Use case | State |
 |---|---|---|
 | Political landscape | `UC02` | Done — deck.gl point cloud, orbit/zoom, colour by group or country, highlight a group, click through to a member. Below it, the votes that most define each axis. |
+| Topic landscape | `UC02.01` | Done — the same cloud framed by three subjects the reader chooses, plus a per-subject axis list, each group's distribution along a selected subject, and the texts anchoring either end. |
 | Members | `UC01` | Done — search by name, country or group; per-term participation and group loyalty. |
 | Stories | `UC04.02` | Done — authored prose with generated figures, visibly distinct from computed output |
 | Topics | `UC04.01` | Partial — a subject-by-group support table, not yet the curated narrative stories `SC04` describes. |

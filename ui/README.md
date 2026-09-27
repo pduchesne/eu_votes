@@ -22,6 +22,7 @@ keep that relative layout.
 | View | Use case | What it shows |
 |---|---|---|
 | Political landscape | `UC02` | The 3D point cloud, one point per member, positioned by how they voted. Orbit, zoom, filter by group, click a point for that member. Below it, the votes that most define each axis. |
+| Topic landscape | `UC02.01` | The same cloud, framed by three subjects the reader picks instead of by principal components. Below it, every subject that carries an axis; select one for each group's distribution along it and the texts anchoring either end. |
 | Members | `UC01` | Search by name, country or group; per-term participation and group loyalty. |
 | Topics | `UC04` | How often each group's majority voted in favour, by Parliament's own subject areas. |
 | How this is made | `UC05` | Provenance, verification coverage, how positions are computed, and what the figures are not. |
@@ -38,3 +39,7 @@ keep that relative layout.
   so the wording says participation everywhere it appears.
 - **deck.gl is loaded from a CDN at a pinned version.** If it fails to load, the 3D view
   says so and the rest of the site still works.
+- **A topic axis is never presented as a for-or-against score.** Restrictive and permissive
+  proposals on a subject both come to a vote, so a yes-count would put the backers of
+  opposing texts at the same end. Each subject publishes how far the naive reading would
+  have agreed with its axis, and the page says when it would mislead.

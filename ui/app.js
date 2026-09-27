@@ -19,7 +19,13 @@ const GROUP_COLOUR = {
 };
 const FALLBACK = [150, 150, 150];
 
-const state = { meta: null, axisVotes: null, axes: null, topicDetail: null, cloud: null, topicDeck: null, meps: [], groups: [], topics: [], stories: [], votes: {}, term: null, deck: null };
+const state = {
+  meta: null, axisVotes: null, axes: null, topicDetail: null, cloud: null, topicDeck: null,
+  meps: [], groups: [], topics: [], stories: [], votes: {}, term: null, deck: null,
+  // Topic landscape: the bundle, which term's frame is currently drawn, its deck, and the
+  // selected subject.
+  topicAxes: null, tlDrawn: null, tlDeck: null, tlTopic: null,
+};
 
 const $ = (id) => document.getElementById(id);
 const pct = (v) => (v == null ? "—" : `${(v * 100).toFixed(1)}%`);
@@ -49,6 +55,7 @@ async function boot() {
   renderProvenance();
   renderMethodology();
   initLandscape();
+  initTopicLandscape();
   initMeps();
   initTopics();
   initAxes();
@@ -60,13 +67,14 @@ async function boot() {
 function route() {
   const parts = location.hash.replace("#/", "").split("/");
   const view = parts[0] || "landscape";
-  const known = ["landscape", "meps", "member", "axes", "topic", "topics", "stories", "methodology"];
+  const known = ["landscape", "topiclandscape", "meps", "member", "axes", "topic", "topics", "stories", "methodology"];
   const active = known.includes(view) ? view : "landscape";
   known.forEach((name) => ($(`view-${name}`).hidden = name !== active));
   document.querySelectorAll("nav a").forEach((a) =>
     a.classList.toggle("active", a.dataset.view === active)
   );
   if (active === "landscape") drawLandscape();
+  if (active === "topiclandscape") renderTopicLandscape(decodeURIComponent(parts.slice(1).join("/")));
   if (active === "axes") renderAxes();
   if (active === "topic") renderTopic(decodeURIComponent(parts.slice(1).join("/")));
   if (active === "member") renderMember(parts[1]);
@@ -147,6 +155,27 @@ function renderMethodology() {
       <tbody>${variance}</tbody></table></div>
     <p class="caveat">A component's sign and rotation are arbitrary. Distance and
     clustering carry meaning; being left or right of zero does not.</p>
+
+    <h2>Axes you can name</h2>
+    <p>Those axes separate members as sharply as any three numbers can, which is exactly
+    why they cannot be named: "axis 2" is not a thing anyone holds an opinion about. So the
+    same computation is run again on one subject at a time — the votes Parliament itself
+    classified under a theme — giving an axis that <em>can</em> be named, at the cost of
+    explaining less. That is what the
+    <a href="#/topiclandscape">topic landscape</a> shows.</p>
+    <p>These are not for-or-against scales, and the distinction matters. Restrictive and
+    permissive proposals on a subject both come to a vote, so counting how often a member
+    voted yes would put the supporters of opposite texts at the same end. Each vote instead
+    enters with a signed weight learned from who votes together, so backing a restrictive
+    text and backing a permissive one pull a member in opposite directions. Each topic axis
+    reports how far the naive yes-count would have agreed with it, because on many subjects
+    it does not — and on some it inverts outright.</p>
+    <p class="caveat">Direction remains arbitrary here too. Each topic axis is oriented to
+    agree with the term's main axis so that the subjects can be compared with one another,
+    and where that correlation is too weak to decide, the subject's most influential vote
+    is made positive so the choice is at least reproducible. Neither rule makes an end
+    "for" or "against" anything: only the anchoring texts listed at each end say what
+    sitting there meant.</p>
 
     <h2>Licence and credit</h2>
     <p>${state.meta.licence?.published_data.note || ""}
@@ -351,12 +380,8 @@ function initAxes() {
   termOptions($("axes-term"), renderAxes);
 }
 
-/** Where each group's members sit along one axis, as a row of small density curves.
- *
- * Each group is scaled to its own peak rather than to a shared one. Otherwise the two
- * largest groups would be the only legible shapes, and the question here is where a
- * group sits, not how large it is. */
-function ridgeline(term, axis, groups) {
+/** Members' positions along one global axis, grouped by political group. */
+function axisValues(term, axis) {
   const values = new Map();
   for (const mep of state.meps) {
     const record = mep.record[term];
@@ -365,14 +390,27 @@ function ridgeline(term, axis, groups) {
     if (!values.has(group)) values.set(group, []);
     values.get(group).push(record.position[axis - 1]);
   }
+  return values;
+}
+
+/** Where each group's members sit along one axis, as a row of small density curves.
+ *
+ * Each group is scaled to its own peak rather than to a shared one. Otherwise the two
+ * largest groups would be the only legible shapes, and the question here is where a
+ * group sits, not how large it is.
+ *
+ * `values` maps a group code to its members' positions; `ends` optionally labels the two
+ * extremes, since a bare number on an arbitrary scale tells a reader nothing. */
+function ridgeline(values, { label = "one axis", ends = null } = {}) {
   const all = [...values.values()].flat();
   if (!all.length) return "";
   const lo = Math.min(...all), hi = Math.max(...all);
-  const bins = 60, rowHeight = 26, labelWidth = 92, width = 640, pad = 8;
+  const bins = 60, rowHeight = 26, labelWidth = 92, width = 640, pad = 8,
+        footer = ends ? 34 : 26;
   const order = [...values.keys()].sort(
     (a, b) => mean(values.get(a)) - mean(values.get(b))
   );
-  const height = order.length * rowHeight + 26;
+  const height = order.length * rowHeight + footer;
   const x = (v) => labelWidth + ((v - lo) / (hi - lo || 1)) * (width - labelWidth - pad);
 
   const rows = order.map((group, index) => {
@@ -402,17 +440,22 @@ function ridgeline(term, axis, groups) {
       )}</text>`;
   });
 
+  const baseY = height - footer + 6;
   const zero = lo < 0 && hi > 0
-    ? `<line class="axis-line" x1="${x(0)}" y1="4" x2="${x(0)}" y2="${height - 22}"
+    ? `<line class="axis-line" x1="${x(0)}" y1="4" x2="${x(0)}" y2="${baseY - 2}"
              stroke-dasharray="2 3"/>`
     : "";
+  const caption = ends
+    ? `<text class="tick" x="${labelWidth}" y="${height - 4}">◀ ${escape(ends[0])}</text>
+       <text class="tick" x="${width - pad}" y="${height - 4}" text-anchor="end">${escape(ends[1])} ▶</text>`
+    : `<text class="tick" x="${labelWidth}" y="${height - 8}">${lo.toFixed(0)}</text>
+       <text class="tick" x="${width - pad}" y="${height - 8}" text-anchor="end">${hi.toFixed(0)}</text>`;
   return `<svg class="ridge" viewBox="0 0 ${width} ${height}" role="img"
-       aria-label="Distribution of each political group along axis ${axis}">
+       aria-label="Distribution of each political group along ${escape(label)}">
     ${zero}
     ${rows.join("")}
-    <line class="axis-line" x1="${labelWidth}" y1="${height - 20}" x2="${width - pad}" y2="${height - 20}"/>
-    <text class="tick" x="${labelWidth}" y="${height - 8}">${lo.toFixed(0)}</text>
-    <text class="tick" x="${width - pad}" y="${height - 8}" text-anchor="end">${hi.toFixed(0)}</text>
+    <line class="axis-line" x1="${labelWidth}" y1="${baseY}" x2="${width - pad}" y2="${baseY}"/>
+    ${caption}
   </svg>`;
 }
 
@@ -456,7 +499,7 @@ async function renderAxes() {
           in how members voted. Members span ${entry.span.min.toFixed(0)} to
           ${entry.span.max.toFixed(0)} on it; each group's curve is scaled to its own
           peak, so the shape shows where a group sits, not how large it is.</p>
-        ${ridgeline(entry.term, entry.axis)}
+        ${ridgeline(axisValues(entry.term, entry.axis), { label: `axis ${entry.axis}` })}
         <div class="ends">
           ${renderEnd(entry.negative, "left")}
           ${renderEnd(entry.positive, "right")}
@@ -464,6 +507,359 @@ async function renderAxes() {
       </section>`
     )
     .join("");
+}
+
+// ------------------------------------------------------- topic landscape
+
+// Each axis is rescaled to its own spread before being drawn, so the frame shows how
+// three subjects relate rather than which of them happens to divide Parliament hardest.
+const TL_SPAN = 100;
+
+function initTopicLandscape() {
+  termOptions($("tl-term"), () => {
+    state.tlDrawn = null;
+    renderTopicLandscape(state.tlTopic);
+  });
+  ["tl-x", "tl-y", "tl-z"].forEach((id) => ($(id).onchange = drawTopicFrame));
+}
+
+const topicBundle = () => state.topicAxes?.terms?.[String(state.term)] || null;
+
+async function renderTopicLandscape(code) {
+  if (!state.topicAxes) state.topicAxes = await load("topic-axes.json").catch(() => null);
+  // The term is shared with the other views, so the selector may be showing a stale one
+  // after a visit elsewhere.
+  $("tl-term").value = String(state.term);
+  const bundle = topicBundle();
+  if (!bundle) {
+    $("tl-note").innerHTML = state.topicAxes
+      ? `<p class="note">No subject has enough verified votes in ${termLabel(state.term)} to
+         carry an axis of its own. Subject tags start in 2014 and are sparsest in the
+         current term, which is still short.</p>`
+      : `<p class="note">Topic axes are not present in this build of the published data.</p>`;
+    $("tl-list").innerHTML = "";
+    $("tl-topic").innerHTML = "";
+    return;
+  }
+  if (state.tlDrawn !== state.term) {
+    fillFrameSelectors(bundle);
+    renderTopicAxisList(bundle);
+    drawTopicFrame();
+    state.tlDrawn = state.term;
+  }
+  renderTopicAxisDetail(bundle, code);
+}
+
+/** The three framing subjects. Defaults to the best-attested ones, which is also why
+ *  they are the ones a reader is most likely to have an opinion about. */
+function fillFrameSelectors(bundle) {
+  const options = bundle.topics
+    .map((t) => `<option value="${t.code}">${escape(t.label)}</option>`)
+    .join("");
+  ["tl-x", "tl-y", "tl-z"].forEach((id, index) => {
+    const previous = $(id).value;
+    $(id).innerHTML = options;
+    $(id).value = bundle.topics.some((t) => t.code === previous)
+      ? previous
+      : bundle.topics[Math.min(index, bundle.topics.length - 1)].code;
+  });
+}
+
+/** Group membership and name per member, for whichever term is showing. */
+function memberIndex() {
+  const index = new Map();
+  for (const mep of state.meps) {
+    const record = mep.record[state.term];
+    if (!record) continue;
+    index.set(mep.id, {
+      name: `${mep.first_name || ""} ${mep.last_name}`.trim(),
+      group: record.group_code || "NI",
+      country: mep.country_code,
+    });
+  }
+  return index;
+}
+
+function correlation(xs, ys) {
+  const n = xs.length;
+  if (n < 3) return 0;
+  const mx = mean(xs), my = mean(ys);
+  let sxy = 0, sxx = 0, syy = 0;
+  for (let i = 0; i < n; i += 1) {
+    const dx = xs[i] - mx, dy = ys[i] - my;
+    sxy += dx * dy; sxx += dx * dx; syy += dy * dy;
+  }
+  return sxx && syy ? sxy / Math.sqrt(sxx * syy) : 0;
+}
+
+function drawTopicFrame() {
+  const bundle = topicBundle();
+  if (!bundle) return;
+  const chosen = ["tl-x", "tl-y", "tl-z"].map((id) =>
+    bundle.topics.find((t) => t.code === $(id).value)
+  );
+  if (chosen.some((t) => !t)) return;
+
+  // A member only appears if all three subjects placed them; someone who never voted on
+  // one of the three has no position in this frame and is not guessed at.
+  const spread = chosen.map((topic) => {
+    const magnitudes = topic.scores.filter((v) => v != null).map(Math.abs).sort((a, b) => a - b);
+    return magnitudes[Math.floor(magnitudes.length * 0.98)] || 1;
+  });
+  const index = memberIndex();
+  const points = [];
+  bundle.members.forEach((id, i) => {
+    const raw = chosen.map((topic) => topic.scores[i]);
+    if (raw.some((v) => v == null)) return;
+    const who = index.get(id) || { name: String(id), group: "NI", country: "" };
+    points.push({
+      id,
+      ...who,
+      raw,
+      position: raw.map((v, k) => (v / spread[k]) * TL_SPAN),
+    });
+  });
+
+  const pairs = [[0, 1], [0, 2], [1, 2]].map(([a, b]) => ({
+    a, b, r: correlation(points.map((p) => p.raw[a]), points.map((p) => p.raw[b])),
+  }));
+  const tightest = pairs.reduce((x, y) => (Math.abs(y.r) > Math.abs(x.r) ? y : x));
+  const relation = Math.abs(tightest.r) >= 0.8
+    ? `Positions on ${chosen[tightest.a].label} and ${chosen[tightest.b].label} move almost
+       in lockstep (r = ${tightest.r.toFixed(2)}): one division runs through both subjects,
+       which is why the cloud is a streak rather than a cube. That recurrence is a finding,
+       not a drawing error — Parliament mostly splits the same way whatever the topic.`
+    : Math.abs(tightest.r) >= 0.5
+    ? `The closest pair, ${chosen[tightest.a].label} and ${chosen[tightest.b].label}, are
+       related but not the same division (r = ${tightest.r.toFixed(2)}).`
+    : `No two of these subjects divide members the same way (strongest pairing
+       r = ${tightest.r.toFixed(2)}), so the frame really does have three directions.`;
+
+  $("tl-caveat").innerHTML =
+    `${num(points.length)} members have a position on all three subjects. Each axis is the
+     first component of that subject's votes alone, accounting for
+     ${chosen.map((t) => `${pct(t.explained_variance)} of the disagreement on ${escape(t.label)}`).join(", ")}.
+     Each is scaled to its own spread, so the shape shows how the three subjects relate,
+     not which of them divides Parliament most. ${relation}`;
+
+  if (!window.deck) {
+    $("tl-wrap").innerHTML =
+      `<p class="note" style="padding:1rem">The 3D view needs the deck.gl library, which
+       could not be loaded. The axis list below works without it.</p>`;
+    return;
+  }
+
+  const frame = Math.min($("tl-wrap").clientWidth, $("tl-wrap").clientHeight);
+  const axisLines = chosen.map((topic, k) => ({
+    from: [0, 1, 2].map((d) => (d === k ? -TL_SPAN * 1.15 : 0)),
+    to: [0, 1, 2].map((d) => (d === k ? TL_SPAN * 1.15 : 0)),
+    // Long theme names run off the canvas when anchored at the axis tip, so they are
+    // centred just inside it instead.
+    at: [0, 1, 2].map((d) => (d === k ? TL_SPAN * 0.92 : 0)),
+    label: topic.label,
+  }));
+
+  if (state.tlDeck) state.tlDeck.finalize();
+  state.tlDeck = new deck.Deck({
+    canvas: "tl-deck",
+    views: new deck.OrbitView({ orbitAxis: "Y", fovy: 50 }),
+    initialViewState: {
+      target: [0, 0, 0],
+      rotationX: 18,
+      rotationOrbit: 25,
+      zoom: Math.log2((frame * 0.4) / TL_SPAN),
+      minZoom: -4,
+      maxZoom: 8,
+    },
+    controller: true,
+    layers: [
+      new deck.LineLayer({
+        id: "tl-axes",
+        data: axisLines,
+        coordinateSystem: deck.COORDINATE_SYSTEM.CARTESIAN,
+        getSourcePosition: (d) => d.from,
+        getTargetPosition: (d) => d.to,
+        getColor: [140, 146, 154, 140],
+        getWidth: 1.2,
+      }),
+      new deck.TextLayer({
+        id: "tl-axis-labels",
+        data: axisLines,
+        coordinateSystem: deck.COORDINATE_SYSTEM.CARTESIAN,
+        getPosition: (d) => d.at,
+        getText: (d) => d.label,
+        getSize: 12,
+        sizeUnits: "pixels",
+        // Without the clamp a label's apparent size follows its distance from the camera,
+        // so the nearest axis shouts and the furthest is unreadable.
+        sizeMinPixels: 11,
+        sizeMaxPixels: 13,
+        getColor: [70, 76, 86, 230],
+        billboard: true,
+        background: true,
+        getBackgroundColor: [255, 255, 255, 190],
+        backgroundPadding: [3, 2],
+        getTextAnchor: "middle",
+        getAlignmentBaseline: "center",
+      }),
+      new deck.PointCloudLayer({
+        id: "tl-members",
+        data: points,
+        coordinateSystem: deck.COORDINATE_SYSTEM.CARTESIAN,
+        getPosition: (d) => d.position,
+        getColor: (d) => [...(GROUP_COLOUR[d.group] || FALLBACK), 225],
+        pointSize: 5,
+        pickable: true,
+      }),
+    ],
+    getTooltip: ({ object }) =>
+      object && {
+        html: `<b>${escape(object.name)}</b><br>${escape(groupLabel(object.group))} ·
+               ${escape(object.country || "")}<br>` +
+          chosen
+            .map((t, k) => `${escape(t.label)}: ${object.raw[k].toFixed(1)}`)
+            .join("<br>"),
+        style: { fontSize: "0.78rem" },
+      },
+    onClick: ({ object }) => object && showMep(object.id, $("tl-detail")),
+  });
+}
+
+function renderTopicAxisList(bundle) {
+  const meta = state.topicAxes?.method || {};
+  $("tl-note").innerHTML =
+    `${bundle.topics.length} subjects with at least ${num(meta.min_votes || 40)} verified
+     votes and ${num(meta.min_members || 100)} members voting. "Explains" is how much of
+     the disagreement on that subject its axis accounts for; "follows the main axis" is
+     how closely a member's place on it tracks their place in the
+     <a href="#/landscape">overall landscape</a>. Select a subject for its distribution
+     and the texts that anchor each end.`;
+
+  $("tl-list").innerHTML = `<table>
+    <thead><tr><th>Subject</th><th class="num">Votes</th><th class="num">Members</th>
+      <th class="num">Explains</th><th class="num">Follows the main axis</th></tr></thead>
+    <tbody>${bundle.topics
+      .map(
+        (t) => `<tr data-code="${t.code}"${t.code === state.tlTopic ? ' class="chosen"' : ""}>
+          <td><a href="#/topiclandscape/${encodeURIComponent(t.code)}">${escape(t.label)}</a></td>
+          <td class="num">${num(t.votes)}</td><td class="num">${num(t.members)}</td>
+          <td class="num">${pct(t.explained_variance)}</td>
+          <td class="num">${
+            t.global_alignment == null ? "—" : Math.abs(t.global_alignment).toFixed(2)
+          }</td></tr>`
+      )
+      .join("")}</tbody></table>`;
+  // The whole row is the target, not just the link in it: a 5-column table whose only
+  // hit area is eleven characters of text is a worse list than a plain one.
+  $("tl-list")
+    .querySelectorAll("tr[data-code]")
+    .forEach((tr) =>
+      tr.addEventListener("click", () => {
+        location.hash = `#/topiclandscape/${encodeURIComponent(tr.dataset.code)}`;
+      })
+    );
+}
+
+function renderTopicAxisDetail(bundle, code) {
+  state.tlTopic = code || null;
+  $("tl-list")
+    .querySelectorAll("tr[data-code]")
+    .forEach((tr) => tr.classList.toggle("chosen", tr.dataset.code === state.tlTopic));
+
+  const panel = $("tl-topic");
+  const topic = bundle.topics.find((t) => t.code === code);
+  if (!topic) {
+    panel.innerHTML = `<p class="note">Pick a subject above to see how the groups spread
+      along it, and which texts put a member at each end.</p>`;
+    return;
+  }
+
+  const index = memberIndex();
+  const values = new Map();
+  bundle.members.forEach((id, i) => {
+    const score = topic.scores[i];
+    if (score == null) return;
+    const group = index.get(id)?.group || "NI";
+    if (!values.has(group)) values.set(group, []);
+    values.get(group).push(score);
+  });
+
+  // Whether the obvious reading — how often a member backed the texts tabled on this
+  // subject — describes this axis at all. On many subjects it inverts, and saying so is
+  // the difference between a figure and a misleading one.
+  const r = topic.support_correlation;
+  const naive = r == null
+    ? ""
+    : Math.abs(r) >= 0.7
+    ? `<p class="note">On this subject the simple reading works too: how often a member
+       backed the texts tabled tracks their place on the axis (r = ${r.toFixed(2)}).</p>`
+    : `<p class="caveat">Counting how often a member backed the texts tabled would
+       <b>not</b> reproduce this axis (r = ${r.toFixed(2)}). Restrictive and permissive
+       proposals both come to a vote, so a yes is only meaningful together with which text
+       it was cast on — which is what the two lists below show.</p>`;
+
+  panel.innerHTML = `<section class="axis-card">
+    <h2>${escape(topic.label)}</h2>
+    <p class="variance">${num(topic.votes)} verified roll-call votes,
+      ${num(topic.members)} members. This axis accounts for ${pct(topic.explained_variance)}
+      of the disagreement among those votes${
+        topic.global_alignment == null
+          ? ""
+          : `, and a member's place on it tracks their place in the overall landscape at
+             r = ${topic.global_alignment.toFixed(2)}`
+      }.
+      <a href="#/topic/${encodeURIComponent(topic.code)}">Everything about this theme →</a></p>
+    ${ridgeline(values, {
+      label: topic.label,
+      ends: ["voted for the texts on the left", "voted for the texts on the right"],
+    })}
+    ${naive}
+    <div class="ends">
+      ${renderTopicEnd(topic, "negative", "left")}
+      ${renderTopicEnd(topic, "positive", "right")}
+    </div>
+    ${
+      ["negative", "positive"].some((side) =>
+        (topic.ends?.[side] || []).some((v) => v.shared_with_other_end)
+      )
+        ? `<p class="note">A text marked <span class="badge">also at the other end</span>
+           appears in both lists because opposed amendments to one report anchor the two
+           ends, and Parliament's record names no amendment — so the titles cannot tell
+           them apart even though the votes are opposites. The group figures beside each
+           one do.</p>`
+        : ""
+    }
+  </section>`;
+  panel.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+/** One end of a topic axis: the texts that pull hardest towards it, and how the groups at
+ *  the two extremes actually voted on each.
+ *
+ *  That pairing is the whole argument for using a component rather than a yes-count. The
+ *  same group appears in both lists with mirrored figures, which shows the two ends are
+ *  opposed positions and not two piles of yes-votes. */
+function renderTopicEnd(topic, end, side) {
+  const votes = topic.ends?.[end] || [];
+  if (!votes.length) return `<div class="end"><p class="note">No anchoring votes.</p></div>`;
+  const shares = (vote) =>
+    [
+      [topic.low_group, vote.low_group_for],
+      [topic.high_group, vote.high_group_for],
+    ]
+      .filter(([group, share]) => group && share != null)
+      .map(([group, share]) => `${escape(groupLabel(group))} ${pct(share)} for`)
+      .join(" · ");
+  return `<div class="end">
+    <h3>Voting <em>for</em> these puts a member at the ${side}</h3>
+    <ol>${votes
+      .map(
+        (v) => `<li><a href="${v.source}">${escape(v.title)}</a>${
+          v.shared_with_other_end ? ` <span class="badge">also at the other end</span>` : ""
+        }
+          <span class="subject">${v.date}${shares(v) ? ` — ${shares(v)}` : ""}</span></li>`
+      )
+      .join("")}</ol></div>`;
 }
 
 // ---------------------------------------------------------------- one member

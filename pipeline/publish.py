@@ -214,6 +214,109 @@ def _write_member_pages(con, out: Path) -> None:
     print(f"    members/: {len(records):,} profiles, {flagged:,} member-terms with a divergent theme")
 
 
+# How many genuinely different texts to show at each end of a topic axis.
+ANCHORS_SHOWN = 5
+
+
+def _write_topic_axes(con, out: Path, terms: list[int]) -> None:
+    """Named axes, one per theme, with member scores and what each end is about.
+
+    Member scores travel raw rather than pre-binned because the reader chooses which
+    three themes frame the 3D view, and every such choice needs the same numbers. One
+    array per theme, aligned to a single member list per term, keeps that affordable.
+    """
+    if not con.execute(
+        "SELECT count(*) FROM duckdb_tables() WHERE table_name = 'topic_axes'"
+    ).fetchone()[0]:
+        print("    topic-axes.json: skipped — no topic axes in the store (run `mine`)")
+        return
+
+    candidates: dict[tuple, dict[str, list]] = {}
+    for row in _rows(
+        con,
+        """
+        SELECT av.term, av.theme_code, av.side, av.vote_id AS id,
+               coalesce(nullif(v.procedure_title, ''), v.display_title) AS title,
+               strftime(v.timestamp, '%Y-%m-%d') AS date,
+               round(av.loading, 5) AS coefficient,
+               av.low_group_for, av.high_group_for,
+               v.count_for, v.count_against
+        FROM topic_axis_votes av JOIN votes v ON v.id = av.vote_id
+        ORDER BY av.term, av.theme_code, av.side, av.ordinal
+        """,
+    ):
+        key = (row.pop("term"), row.pop("theme_code"))
+        candidates.setdefault(key, {"negative": [], "positive": []})[row.pop("side")].append(row)
+
+    def name(row) -> str:
+        return (row["title"] or "").strip().lower()
+
+    anchors: dict[tuple, dict[str, list]] = {}
+    for key, sides in candidates.items():
+        # A title appearing at both ends is two opposed amendments to one report. That is
+        # real — Parliament's record names no amendment, so the two votes are genuinely
+        # indistinguishable by title — but a reader seeing the same words at both ends
+        # reads it as a mistake. So texts that do tell the ends apart go first, and any
+        # that cannot are kept and flagged rather than dropped.
+        shared = {name(r) for r in sides["negative"]} & {name(r) for r in sides["positive"]}
+        for side, rows in sides.items():
+            distinguishing = [r for r in rows if name(r) not in shared]
+            ambiguous = [r for r in rows if name(r) in shared]
+            chosen, seen = [], set()
+            for row in distinguishing + ambiguous:
+                if len(chosen) >= ANCHORS_SHOWN or name(row) in seen:
+                    continue
+                seen.add(name(row))
+                chosen.append(
+                    {**row, "source": document_url(key[0], row["date"]),
+                     "shared_with_other_end": name(row) in shared}
+                )
+            anchors.setdefault(key, {})[side] = chosen
+
+    scores: dict[tuple, dict[int, float]] = {}
+    for term, code, member_id, score in con.execute(
+        "SELECT term, theme_code, member_id, score FROM topic_positions"
+    ).fetchall():
+        scores.setdefault((term, code), {})[member_id] = score
+
+    payload = {
+        "method": json.loads(
+            con.execute("SELECT pca FROM _mining LIMIT 1").fetchone()[0]
+        ).get("topic_axes", {}),
+        "terms": {},
+    }
+    for term in terms:
+        axes = _rows(
+            con,
+            """
+            SELECT theme_code AS code, theme_label AS label, votes, members,
+                   round(explained_variance, 4) AS explained_variance,
+                   global_alignment, support_correlation, low_group, high_group
+            FROM topic_axes WHERE term = ? ORDER BY votes DESC
+            """,
+            [term],
+        )
+        if not axes:
+            continue
+        # One member list per term, so each theme ships an array of numbers rather than
+        # repeating identifiers 30-odd times over.
+        member_ids = sorted(
+            {m for code in (a["code"] for a in axes) for m in scores.get((term, code), {})}
+        )
+        for axis in axes:
+            by_member = scores.get((term, axis["code"]), {})
+            # Two decimals: these are binned into a density curve and shown to one decimal
+            # in a tooltip, so more digits would only pad the download.
+            axis["scores"] = [
+                None if by_member.get(m) is None else round(by_member[m], 2)
+                for m in member_ids
+            ]
+            axis["ends"] = anchors.get((term, axis["code"]), {"negative": [], "positive": []})
+        payload["terms"][str(term)] = {"members": member_ids, "topics": axes}
+
+    _write(out, "topic-axes.json", payload)
+
+
 def publish(data_dir: Path) -> None:
     con = duckdb.connect(str(data_dir / "eu_votes.duckdb"), read_only=True)
     con.execute("SET enable_progress_bar=false")
@@ -455,6 +558,8 @@ def publish(data_dir: Path) -> None:
                 }
             axes.append(entry)
     _write(out, "axes.json", axes)
+
+    _write_topic_axes(con, out, terms)
 
     # Per-theme detail: what the theme covers, how each group treated it, and its most
     # recent votes. Kept separate from the cloud so a topic page loads text first.

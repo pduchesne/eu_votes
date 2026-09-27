@@ -72,6 +72,21 @@ def _matrix(con, term: int | None = None, window: tuple[str, str] | None = None)
     return members, votes, matrix
 
 
+def _insert(con, table: str, rows: list[list], width: int, chunk: int = 500) -> None:
+    """Bulk insert. `executemany` prepares and executes once per row, which costs minutes
+    on the tens of thousands of rows this module writes; one statement per 500 rows does
+    the same work in seconds."""
+    if not rows:
+        return
+    placeholders = "(" + ", ".join(["?"] * width) + ")"
+    for start in range(0, len(rows), chunk):
+        batch = rows[start : start + chunk]
+        con.execute(
+            f"INSERT INTO {table} VALUES " + ", ".join([placeholders] * len(batch)),
+            [value for row in batch for value in row],
+        )
+
+
 def _align(source: np.ndarray, target: np.ndarray) -> np.ndarray:
     """Orthogonal Procrustes: the rotation carrying `source` closest onto `target`."""
     u, _, vt = np.linalg.svd(source.T @ target)
@@ -147,12 +162,14 @@ def positions(con) -> dict:
         "CREATE TABLE mep_positions (term INTEGER, member_id BIGINT, pc1 DOUBLE, pc2 DOUBLE, pc3 DOUBLE)"
     )
     for term, (members, fitted) in coords.items():
-        con.executemany(
-            "INSERT INTO mep_positions VALUES (?, ?, ?, ?, ?)",
+        _insert(
+            con,
+            "mep_positions",
             [
                 [term, int(m), float(p[0]), float(p[1]), float(p[2])]
                 for m, p in zip(members, fitted)
             ],
+            5,
         )
     return meta
 
@@ -170,12 +187,14 @@ def _write_components(con, loadings: dict) -> None:
     )
     total = 0
     for term, (votes, components) in loadings.items():
-        con.executemany(
-            "INSERT INTO vote_components VALUES (?, ?, ?, ?, ?)",
+        _insert(
+            con,
+            "vote_components",
             [
                 [term, int(vote_id), float(row[0]), float(row[1]), float(row[2])]
                 for vote_id, row in zip(votes, components)
             ],
+            5,
         )
         total += len(votes)
     print(f"    component loadings stored for {total:,} votes")
@@ -290,6 +309,199 @@ def topics(con) -> None:
           ", ".join(f"{label} ({n})" for label, n in rows))
 
 
+# A topic axis needs enough votes to be a measurement rather than an anecdote, and
+# enough members for a group distribution to mean anything.
+TOPIC_MIN_VOTES = 40
+TOPIC_MIN_MEMBERS = 100
+TOPIC_MIN_GROUP = 5
+# More anchors than any view shows: amendments to one report share a procedure title, so
+# publishing deduplicates these down to a handful of genuinely different texts.
+ANCHORS_PER_END = 16
+
+
+def _finite(value: float) -> float | None:
+    """None rather than NaN: a NaN reaches the published JSON as the literal `NaN`, which
+    is not JSON, and takes the whole bundle down with it."""
+    return None if value is None or not np.isfinite(value) else round(float(value), 4)
+
+
+def topic_axes(con) -> dict:
+    """One axis per theme: the main line of division inside that subject alone.
+
+    The global axes are the most discriminating description of the chamber but not a
+    legible one — "axis 2" is not something a citizen holds an opinion about. Fitting a
+    component to one theme's votes gives an axis that can be named, at the cost of
+    explaining less.
+
+    What it is not is a for-or-against scale. Each vote enters with a signed loading
+    learned from who votes together, so voting *for* a restrictive text and voting *for*
+    a permissive one push a member to opposite ends. `support_correlation` records how
+    far the axis agrees with the naive reading — the share of the theme's votes a member
+    backed — precisely because on many themes it does not.
+
+    Direction is arbitrary in PCA, so each axis is oriented to agree with the term's
+    first global component; where that correlation is too weak to decide (|r| < 0.1) the
+    most influential vote is made positive instead, which at least makes the choice
+    deterministic across runs. Neither rule makes an end "for" or "against" anything:
+    only the anchoring votes say what an end means.
+    """
+    themes = con.execute(
+        f"""
+        SELECT v.term, t.theme_code, t.theme_label, count(DISTINCT t.vote_id) AS votes
+        FROM vote_topics t
+        JOIN votes v ON v.id = t.vote_id
+        JOIN vote_verification ver ON ver.vote_id = v.id AND ver.verified
+        GROUP BY 1, 2, 3 HAVING count(DISTINCT t.vote_id) >= {TOPIC_MIN_VOTES}
+        ORDER BY 1, votes DESC
+        """
+    ).fetchall()
+
+    reference = {
+        (term, member): pc1
+        for term, member, pc1 in con.execute(
+            "SELECT term, member_id, pc1 FROM mep_positions"
+        ).fetchall()
+    }
+    group_of = {
+        (term, member): code
+        for term, member, code in con.execute(
+            """SELECT term, member_id, group_code FROM mep_cohesion
+               WHERE group_code IS NOT NULL AND group_code <> ''"""
+        ).fetchall()
+    }
+
+    for table, columns in (
+        (
+            "topic_axes",
+            "term INTEGER, theme_code VARCHAR, theme_label VARCHAR, votes INTEGER,"
+            " members INTEGER, explained_variance DOUBLE, global_alignment DOUBLE,"
+            " support_correlation DOUBLE, low_group VARCHAR, high_group VARCHAR",
+        ),
+        ("topic_positions", "term INTEGER, theme_code VARCHAR, member_id BIGINT, score DOUBLE"),
+        (
+            # `side` rather than `end`, and `ordinal` rather than `rank`: both of the
+            # obvious names are reserved words in SQL.
+            "topic_axis_votes",
+            "term INTEGER, theme_code VARCHAR, vote_id BIGINT, loading DOUBLE,"
+            " side VARCHAR, ordinal INTEGER, low_group_for DOUBLE, high_group_for DOUBLE",
+        ),
+    ):
+        con.execute(f"DROP TABLE IF EXISTS {table}")
+        con.execute(f"CREATE TABLE {table} ({columns})")
+
+    kept, skipped = 0, 0
+    for term, code, label, _ in themes:
+        rows = con.execute(
+            """
+            SELECT mv.member_id, mv.vote_id,
+                   CASE mv.position WHEN 'FOR' THEN 1 ELSE -1 END AS value
+            FROM member_votes mv
+            JOIN votes v ON v.id = mv.vote_id
+            JOIN vote_verification ver ON ver.vote_id = v.id AND ver.verified
+            JOIN vote_topics t ON t.vote_id = v.id AND t.theme_code = ?
+            WHERE v.term = ? AND mv.position IN ('FOR', 'AGAINST')
+            """,
+            [code, term],
+        ).fetchnumpy()
+        members = np.unique(rows["member_id"])
+        votes = np.unique(rows["vote_id"])
+        if len(members) < TOPIC_MIN_MEMBERS:
+            skipped += 1
+            continue
+        matrix = np.zeros((len(members), len(votes)), dtype=np.float32)
+        matrix[
+            np.searchsorted(members, rows["member_id"]),
+            np.searchsorted(votes, rows["vote_id"]),
+        ] = rows["value"]
+
+        pca = PCA(n_components=1)
+        score = pca.fit_transform(matrix)[:, 0]
+        loading = pca.components_[0]
+
+        global_pc1 = np.array([reference.get((term, int(m)), 0.0) for m in members])
+        alignment = (
+            float(np.corrcoef(score, global_pc1)[0, 1]) if global_pc1.any() else 0.0
+        )
+        flip = (
+            alignment < 0
+            if abs(alignment) >= 0.1
+            else loading[int(np.argmax(np.abs(loading)))] < 0
+        )
+        if flip:
+            score, loading, alignment = -score, -loading, -alignment
+
+        # The naive reading, kept alongside so a view can say when it misleads: on some
+        # themes a member who backed most texts sits at one end, on others it inverts.
+        cast = np.maximum((matrix != 0).sum(axis=1), 1)
+        share_for = (matrix == 1).sum(axis=1) / cast
+        support = float(np.corrcoef(score, share_for)[0, 1])
+
+        groups = np.array([group_of.get((term, int(m)), "") for m in members])
+        means = {
+            g: float(score[groups == g].mean())
+            for g in set(groups)
+            if g and (groups == g).sum() >= TOPIC_MIN_GROUP
+        }
+        low = min(means, key=means.get) if means else None
+        high = max(means, key=means.get) if means else None
+
+        con.execute(
+            "INSERT INTO topic_axes VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            [
+                term, code, label, len(votes), len(members),
+                float(pca.explained_variance_ratio_[0]), _finite(alignment),
+                _finite(support), low, high,
+            ],
+        )
+        _insert(
+            con,
+            "topic_positions",
+            [[term, code, int(m), round(float(s), 3)] for m, s in zip(members, score)],
+            4,
+        )
+
+        # What each end is about: the votes that pull hardest towards it, with how the
+        # two extreme groups actually voted on each. That pairing is what shows the
+        # ends are opposed positions rather than two piles of yes-votes.
+        order = np.argsort(loading)
+        anchors = []
+        for side, indices in (
+            ("negative", order[:ANCHORS_PER_END]),
+            ("positive", order[::-1][:ANCHORS_PER_END]),
+        ):
+            for ordinal, index in enumerate(indices, start=1):
+                shares = []
+                for group in (low, high):
+                    selection = (groups == group) & (matrix[:, index] != 0)
+                    shares.append(
+                        _finite((matrix[selection, index] == 1).mean())
+                        if group and selection.any()
+                        else None
+                    )
+                anchors.append(
+                    [term, code, int(votes[index]), round(float(loading[index]), 6),
+                     side, ordinal, *shares]
+                )
+        _insert(con, "topic_axis_votes", anchors, 8)
+        kept += 1
+
+    naive = con.execute(
+        "SELECT count(*) FROM topic_axes WHERE abs(support_correlation) < 0.7"
+    ).fetchone()[0]
+    print(
+        f"    topic axes: {kept} fitted, {skipped} themes too thinly attended;"
+        f" on {naive} of them 'backed most texts' does not track the division"
+    )
+    return {
+        "themes_fitted": kept,
+        "themes_skipped": skipped,
+        "min_votes": TOPIC_MIN_VOTES,
+        "min_members": TOPIC_MIN_MEMBERS,
+        "orientation": "aligned with the term's first global component; "
+                       "the most influential vote made positive where |r| < 0.1",
+    }
+
+
 def window_positions(data_dir: Path, start: str, end: str) -> None:
     """Fit positions for an arbitrary date window (restores the old temporal_slice).
 
@@ -345,6 +557,9 @@ def mine(data_dir: Path) -> None:
     meta = positions(con)
     cohesion(con)
     topics(con)
+    # Last: it needs the global axes to orient against, the themes to slice by, and the
+    # group memberships to describe the ends with.
+    meta["topic_axes"] = topic_axes(con)
 
     con.execute("DROP TABLE IF EXISTS _mining")
     con.execute("CREATE TABLE _mining (computed_at VARCHAR, script JSON, pca JSON)")
