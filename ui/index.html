@@ -59,10 +59,15 @@
   <section id="view-meps" hidden>
     <h1>Members</h1>
     <p class="lede">
-      Search by name, country or political group. Figures are roll-call participation:
-      Parliament does not publish a record of who was absent.
+      Filter by term, political group or country, or search by name. Figures are
+      roll-call participation: Parliament does not publish a record of who was absent.
     </p>
-    <input id="mep-search" type="search" placeholder="Search a member, country or group…" autocomplete="off">
+    <div class="controls">
+      <label>Term <select id="mep-term"></select></label>
+      <label>Political group <select id="mep-group"></select></label>
+      <label>Country <select id="mep-country"></select></label>
+    </div>
+    <input id="mep-search" type="search" placeholder="Search by name…" autocomplete="off">
     <p class="note" id="mep-count"></p>
     <div id="mep-results" class="cards"></div>
     <div id="mep-detail" class="detail" hidden></div>

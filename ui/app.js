@@ -164,9 +164,55 @@ function renderMethodology() {
 
 function initMeps() {
   const search = $("mep-search");
+  $("mep-term").innerHTML =
+    `<option value="">Any term</option>` +
+    state.meta.terms
+      .slice()
+      .sort((a, b) => b - a)
+      .map((t) => `<option value="${t}">${termLabel(t)}</option>`)
+      .join("");
+  $("mep-country").innerHTML =
+    `<option value="">Any country</option>` +
+    Object.entries(state.meta.countries || {})
+      .filter(([code]) => state.meps.some((m) => m.country_code === code))
+      .map(([code, label]) => `<option value="${code}">${escape(label)}</option>`)
+      .join("");
+
   const run = () => renderMepList(search.value.trim().toLowerCase());
+  // The group list depends on the term: offering ALDE while the 10th term is selected
+  // would only ever return nothing.
+  const refreshGroups = () => {
+    const term = $("mep-term").value;
+    const previous = $("mep-group").value;
+    const codes = new Set();
+    for (const mep of state.meps) {
+      for (const [t, record] of Object.entries(mep.record)) {
+        if ((!term || t === term) && record.group_code) codes.add(record.group_code);
+      }
+    }
+    const options = [...codes].sort((a, b) => groupLabel(a).localeCompare(groupLabel(b)));
+    $("mep-group").innerHTML =
+      `<option value="">Any group</option>` +
+      options.map((c) => `<option value="${c}">${escape(groupLabel(c))}</option>`).join("");
+    $("mep-group").value = codes.has(previous) ? previous : "";
+  };
+
+  refreshGroups();
   search.addEventListener("input", run);
+  $("mep-term").addEventListener("change", () => {
+    refreshGroups();
+    run();
+  });
+  $("mep-group").addEventListener("change", run);
+  $("mep-country").addEventListener("change", run);
   run();
+}
+
+/** Which of a member's terms satisfy the current term and group selection. */
+function matchingTerms(mep, term, group) {
+  return Object.entries(mep.record).filter(
+    ([t, record]) => (!term || t === term) && (!group || record.group_code === group)
+  );
 }
 
 function mepTerms(mep) {
@@ -174,26 +220,42 @@ function mepTerms(mep) {
 }
 
 function renderMepList(query) {
+  const term = $("mep-term").value;
+  const group = $("mep-group").value;
+  const country = $("mep-country").value;
+
   const matches = state.meps.filter((mep) => {
+    if (country && mep.country_code !== country) return false;
+    if ((term || group) && !matchingTerms(mep, term, group).length) return false;
     if (!query) return true;
-    const haystack = [
-      mep.first_name, mep.last_name, mep.country_code, mep.constituency,
-      ...(mep.groups || []),
-    ].join(" ").toLowerCase();
-    return haystack.includes(query);
+    return [mep.first_name, mep.last_name, mep.constituency]
+      .join(" ")
+      .toLowerCase()
+      .includes(query);
   });
+
+  const filtered = query || term || group || country;
   $("mep-count").textContent =
-    `${num(matches.length)} of ${num(state.meps.length)} members${query ? " match" : ""}.`;
+    `${num(matches.length)} of ${num(state.meps.length)} members${filtered ? " match" : ""}.` +
+    (matches.length > 60 ? " Showing the first 60." : "");
+
   $("mep-results").innerHTML = matches
     .slice(0, 60)
-    .map(
-      (mep) => `<a class="card" href="#/member/${mep.id}">
+    .map((mep) => {
+      // Show the group that the current selection is actually about, rather than every
+      // group the member ever sat with.
+      const shown = matchingTerms(mep, term, group);
+      const groups = [...new Set((shown.length ? shown : Object.entries(mep.record))
+        .map(([, r]) => r.group_code)
+        .filter(Boolean))].map(groupLabel);
+      const country = (state.meta.countries || {})[mep.country_code] || mep.country_code;
+      return `<a class="card" href="#/member/${mep.id}">
         <img src="${mep.photo_url}" alt="" loading="lazy">
         <span>
-          <span class="who">${mep.first_name || ""} ${mep.last_name}</span>
-          <span class="meta">${mep.country_code} · ${(mep.groups || []).join(", ")}</span>
-        </span></a>`
-    )
+          <span class="who">${escape(mep.first_name || "")} ${escape(mep.last_name)}</span>
+          <span class="meta">${escape(country)} · ${escape(groups.join(", "))}</span>
+        </span></a>`;
+    })
     .join("");
 }
 

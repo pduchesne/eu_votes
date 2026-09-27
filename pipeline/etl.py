@@ -51,6 +51,34 @@ HISTORICAL_LABELS = {
 }
 
 
+def normalise_countries(con) -> None:
+    """One country vocabulary, for the same reason as the groups.
+
+    The 8th term's source records a member's country as a name ("France"), the others as
+    an ISO-3 code ("FRA"), so a country does not join to itself across terms and a
+    country filter would list each one twice.
+    """
+    con.execute(
+        """
+        UPDATE members SET country_code = c.code
+        FROM countries c
+        WHERE c.label = members.country_code AND members.country_code <> c.code
+        """
+    )
+    unknown = con.execute(
+        """SELECT count(DISTINCT country_code) FROM members m
+           WHERE country_code IS NOT NULL
+             AND NOT EXISTS (SELECT 1 FROM countries c WHERE c.code = m.country_code)"""
+    ).fetchone()[0]
+    if unknown:
+        leftovers = con.execute(
+            """SELECT DISTINCT country_code FROM members m WHERE country_code IS NOT NULL
+               AND NOT EXISTS (SELECT 1 FROM countries c WHERE c.code = m.country_code)
+               LIMIT 5"""
+        ).fetchall()
+        print(f"    {unknown} country values outside the lookup, e.g. {[r[0] for r in leftovers]}")
+
+
 def normalise_groups(con) -> None:
     """Put every term on one group vocabulary, so a group joins to itself over time."""
     for source, canonical in GROUP_ALIASES.items():
@@ -102,6 +130,7 @@ def load(data_dir: Path, release: Path | None = None) -> Path:
     con.execute("CREATE INDEX IF NOT EXISTS idx_member_votes_vote ON member_votes(vote_id)")
 
     normalise_groups(con)
+    normalise_countries(con)
 
     con.execute("CREATE TABLE terms (term INTEGER, start_date DATE, end_date DATE)")
     for term, start, end in TERMS:

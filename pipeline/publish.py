@@ -544,6 +544,12 @@ def publish(data_dir: Path) -> None:
             },
             "ingest_source": source,
             "licence": LICENCE,
+            # Small enough to travel with the metadata, so a country filter can show
+            # names without a second request.
+            "countries": {
+                row["code"]: row["label"]
+                for row in _rows(con, "SELECT code, label FROM countries ORDER BY label")
+            },
             "verification": summary,
             "analysis": mining,
             "terms": terms,

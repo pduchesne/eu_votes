@@ -264,9 +264,10 @@ def ingest(data_dir: Path) -> None:
           AND NOT EXISTS (SELECT 1 FROM groups g WHERE g.code = mv.group_code)
         """
     )
-    from .etl import normalise_groups
+    from .etl import normalise_countries, normalise_groups
 
     normalise_groups(con)
+    normalise_countries(con)
 
     totals = con.execute(
         "SELECT term, count(*) FROM votes GROUP BY term ORDER BY term"
