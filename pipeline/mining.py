@@ -251,11 +251,18 @@ def topics(con) -> None:
         SELECT DISTINCT sv.vote_id,
                split_part(sv.oeil_subject_code, '.', 1) AS topic_code,
                top.label AS topic_label,
+               -- The theme: one level down from the broad area, one level up from the
+               -- individual file. "Budget of the Union" rather than "2015 discharge".
+               -- Defined here so every view speaks the same vocabulary.
+               coalesce(mid.code, top.code) AS theme_code,
+               coalesce(mid.label, top.label) AS theme_label,
                sv.oeil_subject_code AS subject_code,
                leaf.label AS subject_label
         FROM oeil_subject_votes sv
         JOIN oeil_subjects top ON top.code = split_part(sv.oeil_subject_code, '.', 1)
         JOIN oeil_subjects leaf ON leaf.code = sv.oeil_subject_code
+        LEFT JOIN oeil_subjects mid
+          ON mid.code = array_to_string(array_slice(str_split(sv.oeil_subject_code, '.'), 1, 2), '.')
         JOIN vote_verification ver ON ver.vote_id = sv.vote_id AND ver.verified
         """
     )
@@ -268,7 +275,9 @@ def topics(con) -> None:
     total = con.execute("SELECT count(DISTINCT vote_id) FROM vote_topics").fetchone()[0]
     covered = con.execute("SELECT count(*) FROM votes").fetchone()[0]
     leaves = con.execute("SELECT count(DISTINCT subject_code) FROM vote_topics").fetchone()[0]
-    print(f"    topics: {total:,} of {covered:,} votes tagged across {leaves} subjects; top: " +
+    themes = con.execute("SELECT count(DISTINCT theme_code) FROM vote_topics").fetchone()[0]
+    print(f"    topics: {total:,} of {covered:,} votes tagged across {themes} themes"
+          f" ({leaves} subjects); top: " +
           ", ".join(f"{label} ({n})" for label, n in rows))
 
 

@@ -252,7 +252,8 @@ function renderTopics() {
   const lookup = new Map(rows.map((r) => [`${r.topic_label}|${r.group_code}`, r]));
   const basis = rows[0].basis || "substantive votes";
 
-  $("topics-table").innerHTML = `<p class="note">${topics.length} subjects, busiest first.</p>
+  $("topics-table").innerHTML = `<p class="note">${topics.length} themes, busiest first — the same vocabulary the
+     <a href="#/axes">axes</a> are described in.</p>
     <div class="scroll"><table>
     <thead><tr><th>Subject</th>${groups.map((g) => `<th class="num">${g}</th>`).join("")}</tr></thead>
     <tbody>${topics
@@ -268,8 +269,9 @@ function renderTopics() {
       })
       .join("")}</tbody></table></div>
     <p class="caveat">Share of ${basis} on that subject where the group's majority voted
-    in favour. Subjects are Parliament's own Legislative Observatory classification, not
-    ours. A dash means fewer than fifteen such votes for that group.
+    in favour. Themes are Parliament's own Legislative Observatory classification read one
+    level above the individual file, so "Budget of the Union" rather than "2015
+    discharge". A dash means fewer than fifteen such votes for that group.
     ${basis === "all votes"
       ? "This term's source carries no flag separating substantive votes from amendments, so its figures cover all roll-call votes and are not directly comparable with the other terms."
       : ""}</p>`;

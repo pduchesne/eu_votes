@@ -168,7 +168,7 @@ def publish(data_dir: Path) -> None:
             con,
             """
             WITH group_position AS (
-                SELECT t.subject_code AS topic_code, t.subject_label AS topic_label,
+                SELECT t.theme_code AS topic_code, t.theme_label AS topic_label,
                        v.term, mv.group_code,
                        mv.vote_id,
                        arg_max(mv.position, mv.n) AS majority
@@ -206,7 +206,7 @@ def publish(data_dir: Path) -> None:
                 SELECT v.id, strftime(v.timestamp, '%Y-%m-%d') AS date, v.display_title AS title,
                        v.procedure_reference, v.is_main, v.result,
                        v.count_for, v.count_against, v.count_abstention, v.count_did_not_vote,
-                       list_filter(list(DISTINCT t.subject_label), x -> x IS NOT NULL) AS topics,
+                       list_filter(list(DISTINCT t.theme_label), x -> x IS NOT NULL) AS topics,
                        -- How strongly this vote separates members along each axis. No
                        -- political direction: component sign and rotation are arbitrary.
                        any_value([round(vc.pc1, 5), round(vc.pc2, 5), round(vc.pc3, 5)]) AS components,
@@ -319,17 +319,9 @@ def publish(data_dir: Path) -> None:
                         SELECT vc.vote_id FROM vote_components vc
                         WHERE vc.term = ? ORDER BY vc.pc{axis} {order} LIMIT 120
                     )
-                    SELECT coalesce(mid.label, broad.label, leaf.label) AS theme,
-                           count(DISTINCT sv.vote_id) AS votes
-                    FROM top
-                    JOIN oeil_subject_votes sv ON sv.vote_id = top.vote_id
-                    JOIN oeil_subjects leaf ON leaf.code = sv.oeil_subject_code
-                    LEFT JOIN oeil_subjects mid
-                      ON mid.code = array_to_string(array_slice(str_split(sv.oeil_subject_code, '.'), 1, 2), '.')
-                    LEFT JOIN oeil_subjects broad
-                      ON broad.code = split_part(sv.oeil_subject_code, '.', 1)
-                    GROUP BY theme HAVING theme IS NOT NULL
-                    ORDER BY votes DESC LIMIT 4
+                    SELECT t.theme_label AS theme, count(DISTINCT t.vote_id) AS votes
+                    FROM top JOIN vote_topics t ON t.vote_id = top.vote_id
+                    GROUP BY t.theme_label ORDER BY votes DESC LIMIT 4
                     """,
                     [term],
                 )
