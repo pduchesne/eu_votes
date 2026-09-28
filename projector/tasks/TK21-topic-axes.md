@@ -71,3 +71,34 @@ rather than left for a reader to infer from a thin-looking cloud.
 - Both ends described by the texts that anchor them, each citing Parliament's document.
 - Orientation rule stated on the methodology page, along with the fact that it asserts no
   political direction.
+
+## Second divisions (added 2026-09-28)
+One component per subject was not enough, and the frame-span numbers said so: first
+components alone spanned 0.47 / 0.45 / **0.19** of the main space for terms 8 / 9 / 10,
+because a theme's first component is almost always the chamber's usual cleavage again.
+
+Each subject now carries two. The second is perpendicular to the first by construction,
+so it is where the subject's own argument lives rather than the chamber's. Measured on
+the 10th term before building it: social policy's second division sits **89° from the
+Treaties axis** and separates The Left from the EPP at d = −4.1, and CFSP's is 12° from
+the Left-versus-EPP contrast. Those are the axes the 3D view was missing.
+
+Frame span, first components only → both available:
+
+| Term | Before | After |
+|---|---|---|
+| 8 | 0.47 | **0.83** |
+| 9 | 0.45 | **0.82** |
+| 10 | 0.19 | **0.70** |
+
+Constraints that came out of building it:
+- **A subject may not supply two of the three frame slots.** Its own two divisions are
+  perpendicular by construction, so a frame taking both would score near-perfectly while
+  showing one subject three-quarters of the time.
+- **Each component is oriented against the global component of the same rank**, so a
+  second division is read the same way round as the chamber's second axis.
+- **Standouts stay on first divisions.** "Where does this member stand out" wants a
+  subject's main argument, not its residual one.
+- Second divisions explain 4-19% against 26-53% for first ones, and their two ends are
+  more often opposed amendments to a single report — which the existing "also at the
+  other end" badge already handles.

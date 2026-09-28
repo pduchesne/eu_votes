@@ -181,6 +181,15 @@ a { color: var(--accent); }
   border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
 }
 
+.decomposition { margin-top: 1.2rem; border-top: 1px solid var(--line); padding-top: 0.8rem; }
+.decomposition h3 { margin: 0 0 0.3rem; font-size: 0.9rem; }
+.decomposition table { font-size: 0.85rem; }
+.decomposition tr.spacer td {
+  font-size: 0.72rem; color: var(--muted); text-transform: uppercase;
+  letter-spacing: 0.04em; border-bottom: none; padding-top: 0.6rem;
+}
+.badge.second { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
+
 .chips { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 0.6rem; }
 .chip-axis {
   display: inline-flex; align-items: center; gap: 0.4rem;

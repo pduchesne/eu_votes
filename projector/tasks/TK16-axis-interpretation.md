@@ -57,3 +57,32 @@ what a correctly aligned shorter window should look like.
 - Positions can be computed for an arbitrary date window, not only whole terms.
 - Published output states that component direction is arbitrary wherever coefficients
   are surfaced.
+
+## Decomposing an axis by subject (2026-09-28)
+The axis cards named the votes that most define each axis, which is useful but is a list
+of dossiers rather than an account of what the axis is about. The axes now also decompose
+into Parliament's own subjects.
+
+This needs no model. A member's score on an axis is a sum over every vote of their
+centred ballot times that vote's loading; votes belong to subjects, so the sum groups by
+subject and the axis falls apart into named parts whose shares add to one. Verified as an
+identity, not a fit: shares summed to 1.001. Votes tagged with several subjects split
+evenly between them; untagged votes are their own bucket rather than dropped.
+
+**The raw share is nearly useless and was very nearly shipped.** It mostly measures how
+many votes a subject has, so the first run reported all three axes as "Budget + CFSP +
+untagged" — the three busiest. Dividing by each subject's own size gives the lift, and
+the axes separate immediately. For the 10th term: axis 1 is carried by public health
+(1.88x), employment (1.43x) and fundamental rights (1.29x); axis 2 by commercial policy
+(1.37x), monetary union (1.30x) and consumers (1.25x); axis 3 by treaties (1.30x). The
+first named reading these axes have had that rests on Parliament's classification rather
+than on keywords from titles.
+
+The same machinery takes any direction, not only a principal axis, so "which subjects
+carry the split between The Left and the EPP" is one call with a different vector — it
+answers social policy 1.51x, public health 1.50x, and Treaties at **0.12x**, a twelfth of
+what its size predicts. That is the arithmetic behind the earlier geometric finding that
+the contrast sits 77° from the Treaties axis.
+
+Honest limit: lifts run 1.2x to 1.9x, not 5x. No subject dominates any axis, which is the
+same recurring result — the main cleavage runs through everything.

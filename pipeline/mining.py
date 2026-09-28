@@ -315,6 +315,13 @@ def topics(con) -> None:
 TOPIC_MIN_VOTES = 40
 TOPIC_MIN_MEMBERS = 100
 TOPIC_MIN_GROUP = 5
+# Two divisions per subject, not one. A theme's first component is almost always the
+# chamber's main cleavage over again — 33 of the 9th term's 38 subjects lie closest to
+# the first global axis and none to the third — so the first components between them
+# span very little. The second is perpendicular to the first by construction, and is
+# where a subject's own argument lives: social policy's second division sits 89 degrees
+# from the Treaties axis and separates the Left from the EPP by four standard deviations.
+TOPIC_COMPONENTS = 2
 # A subject may carry an axis on 40 votes but should not be proposed as one of the three
 # framing a 3D view on that evidence. The default frame draws from a higher bar.
 FRAME_MIN_VOTES = 150
@@ -369,6 +376,59 @@ def _span(directions: list[np.ndarray]) -> float:
     return float(abs(np.linalg.det(np.array(directions))))
 
 
+def _store_topic_axis(
+    con, directions, term, code, label, component, members, votes, matrix, score,
+    loading, space, groups, low, high, explained, alignment, support,
+) -> None:
+    """Persist one division of one subject: where it points, who sits where, what anchors
+    each end."""
+    # Which way this division points in the main space. Needed to choose a frame that
+    # spans it rather than three views of the same cleavage.
+    pointing, space_fit = (
+        _direction(space, score) if space.any() else (np.zeros(N_COMPONENTS), 0.0)
+    )
+    directions.setdefault(term, {})[(code, component)] = (pointing, len(votes), label)
+
+    con.execute(
+        "INSERT INTO topic_axes VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        [
+            term, code, component, label, len(votes), len(members),
+            _finite(explained), _finite(alignment), _finite(support), low, high,
+            *(_finite(v) for v in pointing), _finite(space_fit),
+        ],
+    )
+    _insert(
+        con,
+        "topic_positions",
+        [[term, code, component, int(m), round(float(s), 3)] for m, s in zip(members, score)],
+        5,
+    )
+
+    # What each end is about: the votes that pull hardest towards it, with how the two
+    # extreme groups actually voted on each. That pairing is what shows the ends are
+    # opposed positions rather than two piles of yes-votes.
+    order = np.argsort(loading)
+    anchors = []
+    for side, indices in (
+        ("negative", order[:ANCHORS_PER_END]),
+        ("positive", order[::-1][:ANCHORS_PER_END]),
+    ):
+        for ordinal, index in enumerate(indices, start=1):
+            shares = []
+            for group in (low, high):
+                selection = (groups == group) & (matrix[:, index] != 0)
+                shares.append(
+                    _finite((matrix[selection, index] == 1).mean())
+                    if group and selection.any()
+                    else None
+                )
+            anchors.append(
+                [term, code, component, int(votes[index]),
+                 round(float(loading[index]), 6), side, ordinal, *shares]
+            )
+    _insert(con, "topic_axis_votes", anchors, 9)
+
+
 def topic_axes(con) -> dict:
     """One axis per theme: the main line of division inside that subject alone.
 
@@ -417,23 +477,29 @@ def topic_axes(con) -> dict:
     for table, columns in (
         (
             "topic_axes",
-            "term INTEGER, theme_code VARCHAR, theme_label VARCHAR, votes INTEGER,"
-            " members INTEGER, explained_variance DOUBLE, global_alignment DOUBLE,"
-            " support_correlation DOUBLE, low_group VARCHAR, high_group VARCHAR,"
+            "term INTEGER, theme_code VARCHAR, component INTEGER, theme_label VARCHAR,"
+            " votes INTEGER, members INTEGER, explained_variance DOUBLE,"
+            " global_alignment DOUBLE, support_correlation DOUBLE,"
+            " low_group VARCHAR, high_group VARCHAR,"
             " dir1 DOUBLE, dir2 DOUBLE, dir3 DOUBLE, space_fit DOUBLE",
         ),
         (
             # The three subjects proposed as a default frame, and how well they span.
             "topic_frame",
-            "term INTEGER, slot INTEGER, theme_code VARCHAR, span DOUBLE",
+            "term INTEGER, slot INTEGER, theme_code VARCHAR, component INTEGER, span DOUBLE",
         ),
-        ("topic_positions", "term INTEGER, theme_code VARCHAR, member_id BIGINT, score DOUBLE"),
+        (
+            "topic_positions",
+            "term INTEGER, theme_code VARCHAR, component INTEGER, member_id BIGINT,"
+            " score DOUBLE",
+        ),
         (
             # `side` rather than `end`, and `ordinal` rather than `rank`: both of the
             # obvious names are reserved words in SQL.
             "topic_axis_votes",
-            "term INTEGER, theme_code VARCHAR, vote_id BIGINT, loading DOUBLE,"
-            " side VARCHAR, ordinal INTEGER, low_group_for DOUBLE, high_group_for DOUBLE",
+            "term INTEGER, theme_code VARCHAR, component INTEGER, vote_id BIGINT,"
+            " loading DOUBLE, side VARCHAR, ordinal INTEGER,"
+            " low_group_for DOUBLE, high_group_for DOUBLE",
         ),
     ):
         con.execute(f"DROP TABLE IF EXISTS {table}")
@@ -465,83 +531,48 @@ def topic_axes(con) -> dict:
             np.searchsorted(votes, rows["vote_id"]),
         ] = rows["value"]
 
-        pca = PCA(n_components=1)
-        score = pca.fit_transform(matrix)[:, 0]
-        loading = pca.components_[0]
-
+        pca = PCA(n_components=TOPIC_COMPONENTS)
+        fitted = pca.fit_transform(matrix)
         space = np.array(
             [reference.get((term, int(m)), np.zeros(N_COMPONENTS)) for m in members]
         )
-        alignment = float(np.corrcoef(score, space[:, 0])[0, 1]) if space.any() else 0.0
-        flip = (
-            alignment < 0
-            if abs(alignment) >= 0.1
-            else loading[int(np.argmax(np.abs(loading)))] < 0
-        )
-        if flip:
-            score, loading, alignment = -score, -loading, -alignment
-
         # The naive reading, kept alongside so a view can say when it misleads: on some
         # themes a member who backed most texts sits at one end, on others it inverts.
         cast = np.maximum((matrix != 0).sum(axis=1), 1)
         share_for = (matrix == 1).sum(axis=1) / cast
-        support = float(np.corrcoef(score, share_for)[0, 1])
-
         groups = np.array([group_of.get((term, int(m)), "") for m in members])
-        means = {
-            g: float(score[groups == g].mean())
-            for g in set(groups)
-            if g and (groups == g).sum() >= TOPIC_MIN_GROUP
-        }
-        low = min(means, key=means.get) if means else None
-        high = max(means, key=means.get) if means else None
 
-        # Which way this subject's axis points in the main space. Needed to choose a
-        # frame that spans it rather than three views of the same division.
-        pointing, space_fit = (
-            _direction(space, score) if space.any() else (np.zeros(N_COMPONENTS), 0.0)
-        )
-        directions.setdefault(term, {})[code] = (pointing, len(votes))
+        for component in range(TOPIC_COMPONENTS):
+            score = fitted[:, component]
+            loading = pca.components_[component]
 
-        con.execute(
-            "INSERT INTO topic_axes VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            [
-                term, code, label, len(votes), len(members),
-                float(pca.explained_variance_ratio_[0]), _finite(alignment),
-                _finite(support), low, high,
-                *(_finite(v) for v in pointing), _finite(space_fit),
-            ],
-        )
-        _insert(
-            con,
-            "topic_positions",
-            [[term, code, int(m), round(float(s), 3)] for m, s in zip(members, score)],
-            4,
-        )
+            # Each component is oriented against the global component of the same rank,
+            # so a subject's second division is read the same way round as the chamber's
+            # second axis rather than arbitrarily.
+            alignment = (
+                float(np.corrcoef(score, space[:, component])[0, 1]) if space.any() else 0.0
+            )
+            flip = (
+                alignment < 0
+                if abs(alignment) >= 0.1
+                else loading[int(np.argmax(np.abs(loading)))] < 0
+            )
+            if flip:
+                score, loading, alignment = -score, -loading, -alignment
 
-        # What each end is about: the votes that pull hardest towards it, with how the
-        # two extreme groups actually voted on each. That pairing is what shows the
-        # ends are opposed positions rather than two piles of yes-votes.
-        order = np.argsort(loading)
-        anchors = []
-        for side, indices in (
-            ("negative", order[:ANCHORS_PER_END]),
-            ("positive", order[::-1][:ANCHORS_PER_END]),
-        ):
-            for ordinal, index in enumerate(indices, start=1):
-                shares = []
-                for group in (low, high):
-                    selection = (groups == group) & (matrix[:, index] != 0)
-                    shares.append(
-                        _finite((matrix[selection, index] == 1).mean())
-                        if group and selection.any()
-                        else None
-                    )
-                anchors.append(
-                    [term, code, int(votes[index]), round(float(loading[index]), 6),
-                     side, ordinal, *shares]
-                )
-        _insert(con, "topic_axis_votes", anchors, 8)
+            support = float(np.corrcoef(score, share_for)[0, 1])
+            means = {
+                g: float(score[groups == g].mean())
+                for g in set(groups)
+                if g and (groups == g).sum() >= TOPIC_MIN_GROUP
+            }
+            low = min(means, key=means.get) if means else None
+            high = max(means, key=means.get) if means else None
+            _store_topic_axis(
+                con, directions, term, code, label, component + 1, members, votes,
+                matrix, score, loading, space, groups, low, high,
+                float(pca.explained_variance_ratio_[component]), alignment, support,
+            )
         kept += 1
 
     frames = _choose_frames(con, directions)
@@ -580,33 +611,158 @@ def _choose_frames(con, directions: dict[int, dict[str, tuple]]) -> dict:
     """
     chosen = {}
     for term, axes in directions.items():
-        pool = [code for code, (_, votes) in axes.items() if votes >= FRAME_MIN_VOTES]
+        pool = [key for key, (_, votes, _) in axes.items() if votes >= FRAME_MIN_VOTES]
         if len(pool) < N_COMPONENTS:
             pool = list(axes)
         if len(pool) < N_COMPONENTS:
             continue
-        best = max(
-            combinations(pool, N_COMPONENTS),
-            key=lambda triple: _span([axes[c][0] for c in triple]),
-        )
-        span = _span([axes[c][0] for c in best])
+        # A subject may not supply two of the three slots: a theme's own two divisions
+        # are perpendicular by construction, so taking both would score a perfect span
+        # while showing one subject three-quarters of the time.
+        candidates = [
+            triple
+            for triple in combinations(pool, N_COMPONENTS)
+            if len({code for code, _ in triple}) == N_COMPONENTS
+        ]
+        if not candidates:
+            continue
+        best = max(candidates, key=lambda triple: _span([axes[k][0] for k in triple]))
+        span = _span([axes[k][0] for k in best])
         # Each slot takes the subject nearest that component, so the frame stays
         # recognisable against the main landscape rather than arriving in arbitrary order.
         remaining, order = list(best), []
         for slot in range(N_COMPONENTS):
-            pick = max(remaining, key=lambda c: abs(axes[c][0][slot]))
+            pick = max(remaining, key=lambda k: abs(axes[k][0][slot]))
             order.append(pick)
             remaining.remove(pick)
         _insert(
             con,
             "topic_frame",
-            [[term, slot, code, span] for slot, code in enumerate(order)],
-            4,
+            [[term, slot, code, component, span]
+             for slot, (code, component) in enumerate(order)],
+            5,
         )
-        chosen[str(term)] = {"topics": order, "span": round(span, 4)}
-        print(f"    T{term} frame spans {span:.2f} of the main space: "
-              + " / ".join(order))
+        chosen[str(term)] = {
+            "topics": [{"code": c, "component": n} for c, n in order],
+            "span": round(span, 4),
+        }
+        print(
+            f"    T{term} frame spans {span:.2f} of the main space: "
+            + " / ".join(
+                f"{axes[k][2][:22]}{'' if k[1] == 1 else ' (2nd)'}" for k in order
+            )
+        )
     return chosen
+
+
+DECOMPOSE_MIN_VOTES = 60
+
+
+def axis_decomposition(con) -> dict:
+    """Which subjects carry each principal axis, over and above their size.
+
+    A member's score on an axis is a sum over every vote of their centred ballot times
+    that vote's loading. Votes belong to subjects, so the sum groups by subject and the
+    axis falls apart into named parts. This is an identity, not a fitted model: the
+    shares are exact and add to one, and nothing here can be overfitted.
+
+    The raw share is nearly useless on its own, because it mostly measures how many votes
+    a subject has — the busiest subjects carry every axis, and the answer comes out the
+    same three names each time. What is worth knowing is the lift: how much more of an
+    axis a subject carries than its size predicts. On that reading the 10th term's axes
+    stop being anonymous — the first is carried by public health, employment and
+    fundamental rights, the second by commercial and monetary policy, the third by
+    treaties.
+
+    A vote tagged with several subjects is split evenly between them so the partition
+    stays exact, and untagged votes are reported as their own bucket rather than dropped.
+    """
+    con.execute("DROP TABLE IF EXISTS axis_subjects")
+    con.execute(
+        """CREATE TABLE axis_subjects (
+               term INTEGER, axis INTEGER, theme_code VARCHAR, theme_label VARCHAR,
+               carries DOUBLE, size DOUBLE, lift DOUBLE)"""
+    )
+
+    terms = [
+        r[0]
+        for r in con.execute("SELECT DISTINCT term FROM vote_components ORDER BY term").fetchall()
+    ]
+    summary = {}
+    for term in terms:
+        members, votes, matrix = _matrix(con, term)
+        loadings = {
+            v: p
+            for v, *p in con.execute(
+                "SELECT vote_id, pc1, pc2, pc3 FROM vote_components WHERE term = ?", [term]
+            ).fetchall()
+        }
+        keep = [i for i, v in enumerate(votes) if int(v) in loadings]
+        matrix, votes = matrix[:, keep], votes[keep]
+        weights_by_vote = np.array([loadings[int(v)] for v in votes])
+        centred = matrix - matrix.mean(axis=0)
+
+        tagged: dict[int, list[str]] = {}
+        labels: dict[str, str] = {}
+        for vote_id, code, label in con.execute(
+            """SELECT DISTINCT t.vote_id, t.theme_code, t.theme_label
+               FROM vote_topics t JOIN votes v ON v.id = t.vote_id WHERE v.term = ?""",
+            [term],
+        ).fetchall():
+            tagged.setdefault(vote_id, []).append(code)
+            labels[code] = label
+
+        index = {int(v): i for i, v in enumerate(votes)}
+        share_of: dict[str, np.ndarray] = {}
+        counted: dict[str, float] = {}
+        untagged = np.ones(len(votes))
+        for vote_id, codes in tagged.items():
+            i = index.get(vote_id)
+            if i is None:
+                continue
+            untagged[i] = 0.0
+            for code in codes:
+                share_of.setdefault(code, np.zeros(len(votes)))[i] = 1.0 / len(codes)
+                counted[code] = counted.get(code, 0.0) + 1.0 / len(codes)
+        share_of = {c: w for c, w in share_of.items() if counted[c] >= DECOMPOSE_MIN_VOTES}
+        share_of["(untagged)"] = untagged
+        labels["(untagged)"] = "No subject tag"
+
+        def shares(axis: int) -> dict:
+            weight = weights_by_vote[:, axis]
+            target = centred @ weight
+            total = float(target.var()) or 1.0
+            return {
+                code: float(np.cov(centred @ (weight * w), target)[0, 1]) / total
+                for code, w in share_of.items()
+            }
+
+        per_axis = {axis: shares(axis) for axis in range(N_COMPONENTS)}
+        # A subject's share of the space at large, which is what "more than its size"
+        # is measured against.
+        baseline = {
+            code: sum(per_axis[axis][code] for axis in per_axis) / len(per_axis)
+            for code in share_of
+        }
+
+        rows = []
+        for axis, values in per_axis.items():
+            for code, carries in values.items():
+                size = baseline[code]
+                if size <= 0.002:
+                    continue
+                rows.append(
+                    [term, axis + 1, code, labels[code],
+                     round(carries, 5), round(size, 5), round(carries / size, 3)]
+                )
+        _insert(con, "axis_subjects", rows, 7)
+        summary[str(term)] = {"subjects": len(share_of), "rows": len(rows)}
+        top = sorted(
+            (r for r in rows if r[1] == 1), key=lambda r: -r[6]
+        )[:3]
+        print(f"    T{term} axis 1 carried most by: "
+              + ", ".join(f"{r[3][:26]} {r[6]:.2f}x" for r in top))
+    return summary
 
 
 def window_positions(data_dir: Path, start: str, end: str) -> None:
@@ -667,6 +823,7 @@ def mine(data_dir: Path) -> None:
     # Last: it needs the global axes to orient against, the themes to slice by, and the
     # group memberships to describe the ends with.
     meta["topic_axes"] = topic_axes(con)
+    meta["axis_subjects"] = axis_decomposition(con)
 
     con.execute("DROP TABLE IF EXISTS _mining")
     con.execute("CREATE TABLE _mining (computed_at VARCHAR, script JSON, pca JSON)")

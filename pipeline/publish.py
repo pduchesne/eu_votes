@@ -120,8 +120,11 @@ WITH member_group AS (
     WHERE group_code IS NOT NULL AND group_code <> ''
 ),
 eligible AS (
+    -- First divisions only. A subject's second division is a real axis but a poor
+    -- basis for "where does this member stand out", which wants the subject's main
+    -- argument rather than its residual one.
     SELECT term, theme_code, theme_label, low_group, high_group
-    FROM topic_axes WHERE votes >= {STANDOUT_MIN_VOTES}
+    FROM topic_axes WHERE votes >= {STANDOUT_MIN_VOTES} AND component = 1
 ),
 chamber AS (
     -- 5th to 95th percentile, not the extremes: one outlier would otherwise squash
@@ -130,7 +133,7 @@ chamber AS (
            quantile_cont(score, 0.05) AS lo,
            quantile_cont(score, 0.95) AS hi,
            median(score) AS mid
-    FROM topic_positions GROUP BY 1, 2
+    FROM topic_positions WHERE component = 1 GROUP BY 1, 2
 ),
 grp AS (
     SELECT tp.term, tp.theme_code, mg.group_code, count(*) AS n,
@@ -139,6 +142,7 @@ grp AS (
            quantile_cont(tp.score, 0.75) AS q3
     FROM topic_positions tp
     JOIN member_group mg ON mg.term = tp.term AND mg.member_id = tp.member_id
+    WHERE tp.component = 1
     GROUP BY 1, 2, 3
 )
 """
@@ -173,7 +177,7 @@ def _member_standouts(con) -> dict:
             JOIN grp g ON g.term = tp.term AND g.theme_code = tp.theme_code
                        AND g.group_code = mg.group_code
             JOIN chamber c ON c.term = tp.term AND c.theme_code = tp.theme_code
-            WHERE g.n >= {STANDOUT_MIN_GROUP}
+            WHERE g.n >= {STANDOUT_MIN_GROUP} AND tp.component = 1
         ),
         -- Against their own habit, not against zero. Someone who sits at the edge of
         -- their group on everything is not telling you anything by sitting at its edge
@@ -427,17 +431,17 @@ def _write_topic_axes(con, out: Path, terms: list[int]) -> None:
     for row in _rows(
         con,
         """
-        SELECT av.term, av.theme_code, av.side, av.vote_id AS id,
+        SELECT av.term, av.theme_code, av.component, av.side, av.vote_id AS id,
                coalesce(nullif(v.procedure_title, ''), v.display_title) AS title,
                strftime(v.timestamp, '%Y-%m-%d') AS date,
                round(av.loading, 5) AS coefficient,
                av.low_group_for, av.high_group_for,
                v.count_for, v.count_against
         FROM topic_axis_votes av JOIN votes v ON v.id = av.vote_id
-        ORDER BY av.term, av.theme_code, av.side, av.ordinal
+        ORDER BY av.term, av.theme_code, av.component, av.side, av.ordinal
         """,
     ):
-        key = (row.pop("term"), row.pop("theme_code"))
+        key = (row.pop("term"), row.pop("theme_code"), row.pop("component"))
         candidates.setdefault(key, {"negative": [], "positive": []})[row.pop("side")].append(row)
 
     def name(row) -> str:
@@ -466,10 +470,10 @@ def _write_topic_axes(con, out: Path, terms: list[int]) -> None:
             anchors.setdefault(key, {})[side] = chosen
 
     scores: dict[tuple, dict[int, float]] = {}
-    for term, code, member_id, score in con.execute(
-        "SELECT term, theme_code, member_id, score FROM topic_positions"
+    for term, code, component, member_id, score in con.execute(
+        "SELECT term, theme_code, component, member_id, score FROM topic_positions"
     ).fetchall():
-        scores.setdefault((term, code), {})[member_id] = score
+        scores.setdefault((term, code, component), {})[member_id] = score
 
     payload = {
         "method": json.loads(
@@ -481,14 +485,19 @@ def _write_topic_axes(con, out: Path, terms: list[int]) -> None:
         axes = _rows(
             con,
             """
-            SELECT theme_code AS code, theme_label AS label, votes, members,
+            SELECT
+                   -- A stable handle for one division of one subject, since a subject
+                   -- now has two and the interface needs to name each.
+                   CASE WHEN component = 1 THEN theme_code
+                        ELSE theme_code || '~' || component END AS id,
+                   theme_code AS code, component, theme_label AS label, votes, members,
                    round(explained_variance, 4) AS explained_variance,
                    global_alignment, support_correlation, low_group, high_group,
                    -- Where this subject's axis points in the main three-component
                    -- space. What lets a reader's own choice of three be judged for
                    -- whether it spans that space or collapses onto one division.
                    [dir1, dir2, dir3] AS direction
-            FROM topic_axes WHERE term = ? ORDER BY votes DESC
+            FROM topic_axes WHERE term = ? ORDER BY votes DESC, component
             """,
             [term],
         )
@@ -496,30 +505,38 @@ def _write_topic_axes(con, out: Path, terms: list[int]) -> None:
             continue
         frame = _rows(
             con,
-            "SELECT theme_code AS code, span FROM topic_frame WHERE term = ? ORDER BY slot",
+            """SELECT CASE WHEN component = 1 THEN theme_code
+                           ELSE theme_code || '~' || component END AS id, span
+               FROM topic_frame WHERE term = ? ORDER BY slot""",
             [term],
         )
         # One member list per term, so each theme ships an array of numbers rather than
         # repeating identifiers 30-odd times over.
         member_ids = sorted(
-            {m for code in (a["code"] for a in axes) for m in scores.get((term, code), {})}
+            {
+                m
+                for a in axes
+                for m in scores.get((term, a["code"], a["component"]), {})
+            }
         )
         for axis in axes:
-            by_member = scores.get((term, axis["code"]), {})
+            by_member = scores.get((term, axis["code"], axis["component"]), {})
             # Two decimals: these are binned into a density curve and shown to one decimal
             # in a tooltip, so more digits would only pad the download.
             axis["scores"] = [
                 None if by_member.get(m) is None else round(by_member[m], 2)
                 for m in member_ids
             ]
-            axis["ends"] = anchors.get((term, axis["code"]), {"negative": [], "positive": []})
+            axis["ends"] = anchors.get(
+                (term, axis["code"], axis["component"]), {"negative": [], "positive": []}
+            )
         payload["terms"][str(term)] = {
             "members": member_ids,
             "topics": axes,
             # The default three: chosen to span the main space, not for being the
             # busiest. The busiest all follow the same division in most terms.
             "frame": {
-                "topics": [row["code"] for row in frame],
+                "topics": [row["id"] for row in frame],
                 "span": frame[0]["span"] if frame else None,
             },
         }
@@ -766,6 +783,19 @@ def publish(data_dir: Path) -> None:
                     "keywords": _keywords([r["title"] for r in top]),
                     "themes": themes,
                 }
+            # Which subjects carry this axis, over and above their size. Exact rather
+            # than fitted: a score is a sum over votes, and votes belong to subjects.
+            entry["subjects"] = _rows(
+                con,
+                """
+                SELECT theme_code AS code, theme_label AS label,
+                       carries, size, lift
+                FROM axis_subjects
+                WHERE term = ? AND axis = ? AND size >= 0.005
+                ORDER BY lift DESC
+                """,
+                [term, axis],
+            )
             axes.append(entry)
     _write(out, "axes.json", axes)
 
@@ -779,7 +809,10 @@ def publish(data_dir: Path) -> None:
     for row in _rows(
         con,
         """
-        SELECT term, theme_code AS code, theme_label AS label, votes,
+        SELECT term,
+               CASE WHEN component = 1 THEN theme_code
+                    ELSE theme_code || '~' || component END AS id,
+               theme_code AS code, component, theme_label AS label, votes,
                [dir1, dir2, dir3] AS direction,
                -- How much of this subject's division the three main axes account for.
                -- An arrow for a subject that mostly divides members in some fourth
@@ -788,7 +821,7 @@ def publish(data_dir: Path) -> None:
                low_group, high_group
         FROM topic_axes
         WHERE dir1 IS NOT NULL
-        ORDER BY term, votes DESC
+        ORDER BY term, votes DESC, component
         """,
     ):
         directions.setdefault(str(row.pop("term")), []).append(row)

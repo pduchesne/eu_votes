@@ -500,6 +500,43 @@ function renderEnd(end, side) {
       .join("")}</ol></div>`;
 }
 
+/** Which subjects carry this axis, beyond what their size would predict.
+ *
+ * Exact rather than modelled: a member's score on an axis is a sum over every vote of
+ * their ballot times that vote's weight, and votes belong to subjects, so the axis
+ * decomposes by subject with shares adding to one.
+ *
+ * The raw share is shown too, because on its own it would mislead: it mostly measures
+ * how many votes a subject has, which is why the busiest subjects appear near the top of
+ * every axis. The lift is the column that distinguishes one axis from another. */
+function renderDecomposition(entry) {
+  const subjects = entry.subjects || [];
+  if (subjects.length < 3) return "";
+  const shown = subjects.slice(0, 5);
+  const bottom = subjects.slice(-2).reverse();
+  const row = (s) => `<tr>
+    <td>${s.code === "(untagged)"
+      ? "Votes with no subject tag"
+      : `<a href="#/topic/${encodeURIComponent(s.code)}">${escape(s.label)}</a>`}</td>
+    <td class="num">${pct(s.carries)}</td>
+    <td class="num">${pct(s.size)}</td>
+    <td class="num"><b>${s.lift.toFixed(2)}×</b></td></tr>`;
+
+  return `<div class="decomposition">
+    <h3>What carries this axis</h3>
+    <p class="note">Every vote contributes to an axis, so the axis can be split by
+      subject exactly. "Carries" is that share; "size" is what the subject's own volume
+      would predict. The last column is the ratio — the subjects that make this axis
+      different from the others.</p>
+    <div class="scroll"><table>
+      <thead><tr><th>Subject</th><th class="num">Carries</th><th class="num">Size</th>
+        <th class="num">Ratio</th></tr></thead>
+      <tbody>${shown.map(row).join("")}
+        <tr class="spacer"><td colspan="4">least, for contrast</td></tr>
+        ${bottom.map(row).join("")}</tbody></table></div>
+  </div>`;
+}
+
 async function renderAxes() {
   if (!state.axes) state.axes = await load("axes.json").catch(() => []);
   const entries = state.axes.filter((a) => a.term === state.term);
@@ -520,6 +557,7 @@ async function renderAxes() {
           ${renderEnd(entry.negative, "left")}
           ${renderEnd(entry.positive, "right")}
         </div>
+        ${renderDecomposition(entry)}
       </section>`
     )
     .join("");
@@ -545,6 +583,14 @@ function initTopicLandscape() {
 }
 
 const topicBundle = () => state.topicAxes?.terms?.[String(state.term)] || null;
+
+/** A subject now carries two divisions, and they must never be confused for each other.
+ *
+ * The first is the subject's main argument and is almost always the chamber's usual
+ * cleavage again. The second is what remains once that is taken out — perpendicular to
+ * the first by construction, and where a subject's own disagreement lives. */
+const axisName = (axis) =>
+  axis.component > 1 ? `${axis.label} — second division` : axis.label;
 
 async function renderTopicLandscape(code) {
   if (!state.topicAxes) state.topicAxes = await load("topic-axes.json").catch(() => null);
@@ -579,18 +625,18 @@ async function renderTopicLandscape(code) {
  * never appear. */
 function fillFrameSelectors(bundle) {
   const options = bundle.topics
-    .map((t) => `<option value="${t.code}">${escape(t.label)}</option>`)
+    .map((t) => `<option value="${t.id}">${escape(axisName(t))}</option>`)
     .join("");
   const preferred = bundle.frame?.topics || [];
   ["tl-x", "tl-y", "tl-z"].forEach((id, index) => {
     const previous = $(id).value;
-    const fallback = bundle.topics[Math.min(index, bundle.topics.length - 1)].code;
+    const fallback = bundle.topics[Math.min(index, bundle.topics.length - 1)].id;
     $(id).innerHTML = options;
     // A selection the reader made themselves survives a change of term where the subject
     // still exists. One left over from another term's default must not: it is nobody's
     // choice, and carrying it across silently replaces this term's spanning frame with a
     // collapsed one.
-    const keep = state.tlChosenFrame && bundle.topics.some((t) => t.code === previous);
+    const keep = state.tlChosenFrame && bundle.topics.some((t) => t.id === previous);
     $(id).value = keep ? previous : preferred[index] || fallback;
   });
 }
@@ -652,7 +698,7 @@ function drawTopicFrame() {
   const bundle = topicBundle();
   if (!bundle) return;
   const chosen = ["tl-x", "tl-y", "tl-z"].map((id) =>
-    bundle.topics.find((t) => t.code === $(id).value)
+    bundle.topics.find((t) => t.id === $(id).value)
   );
   if (chosen.some((t) => !t)) return;
 
@@ -681,8 +727,8 @@ function drawTopicFrame() {
   }));
   const tightest = pairs.reduce((x, y) => (Math.abs(y.r) > Math.abs(x.r) ? y : x));
   const span = frameSpan(chosen);
-  const isDefault = (bundle.frame?.topics || []).every((code) =>
-    chosen.some((t) => t.code === code)
+  const isDefault = (bundle.frame?.topics || []).every((id) =>
+    chosen.some((t) => t.id === id)
   );
 
   // The one number that says whether this frame is a cloud or a streak. Three subjects
@@ -705,14 +751,14 @@ function drawTopicFrame() {
        }`;
 
   const lockstep = Math.abs(tightest.r) >= 0.8
-    ? ` ${escape(chosen[tightest.a].label)} and ${escape(chosen[tightest.b].label)} move
+    ? ` ${escape(axisName(chosen[tightest.a]))} and ${escape(axisName(chosen[tightest.b]))} move
         almost in lockstep (r = ${tightest.r.toFixed(2)}).`
     : "";
 
   $("tl-caveat").innerHTML =
-    `${num(points.length)} members have a position on all three subjects. Each axis is the
-     first component of that subject's votes alone, accounting for
-     ${chosen.map((t) => `${pct(t.explained_variance)} of the disagreement on ${escape(t.label)}`).join(", ")}.
+    `${num(points.length)} members have a position on all three subjects. Each axis is a
+     division found in that subject's votes alone, accounting for
+     ${chosen.map((t) => `${pct(t.explained_variance)} of the disagreement on ${escape(axisName(t))}`).join(", ")}.
      Each is scaled to its own spread, so the shape shows how the three subjects relate,
      not which of them divides Parliament most. ${quality}${lockstep}
      ${isDefault
@@ -786,7 +832,7 @@ function drawTopicFrame() {
         html: `<b>${escape(object.name)}</b><br>${escape(groupLabel(object.group))} ·
                ${escape(object.country || "")}<br>` +
           chosen
-            .map((t, k) => `${escape(t.label)}: ${object.raw[k].toFixed(1)}`)
+            .map((t, k) => `${escape(axisName(t))}: ${object.raw[k].toFixed(1)}`)
             .join("<br>"),
         style: { fontSize: "0.78rem" },
       },
@@ -831,10 +877,10 @@ function renderTopicAxisList(bundle) {
     <tbody>${bundle.topics
       .map((t) => {
         const near = nearestComponent(t);
-        return `<tr data-code="${t.code}"${t.code === state.tlTopic ? ' class="chosen"' : ""}>
-          <td><a href="#/topiclandscape/${encodeURIComponent(t.code)}">${escape(t.label)}</a>${
-            framing.has(t.code) ? ' <span class="badge">frame</span>' : ""
-          }</td>
+        return `<tr data-code="${t.id}"${t.id === state.tlTopic ? ' class="chosen"' : ""}>
+          <td><a href="#/topiclandscape/${encodeURIComponent(t.id)}">${escape(t.label)}</a>${
+            t.component > 1 ? ' <span class="badge second">2nd division</span>' : ""
+          }${framing.has(t.id) ? ' <span class="badge">frame</span>' : ""}</td>
           <td class="num">${num(t.votes)}</td><td class="num">${num(t.members)}</td>
           <td class="num">${pct(t.explained_variance)}</td>
           <td class="num">${
@@ -860,7 +906,7 @@ function renderTopicAxisDetail(bundle, code) {
     .forEach((tr) => tr.classList.toggle("chosen", tr.dataset.code === state.tlTopic));
 
   const panel = $("tl-topic");
-  const topic = bundle.topics.find((t) => t.code === code);
+  const topic = bundle.topics.find((t) => t.id === code);
   if (!topic) {
     panel.innerHTML = `<p class="note">Pick a subject above to see how the groups spread
       along it, and which texts put a member at each end.</p>`;
@@ -892,7 +938,14 @@ function renderTopicAxisDetail(bundle, code) {
        it was cast on — which is what the two lists below show.</p>`;
 
   panel.innerHTML = `<section class="axis-card">
-    <h2>${escape(topic.label)}</h2>
+    <h2>${escape(axisName(topic))}</h2>
+    ${topic.component > 1
+      ? `<p class="note">The subject's <b>second</b> division: what is left once its main
+         one — which is largely the chamber's usual cleavage — has been taken out. It is
+         perpendicular to that first division by construction, which is why these axes
+         are the ones that give the 3D view real depth. It explains less, and the two
+         ends are often opposed amendments to a single report.</p>`
+      : ""}
     <p class="variance">${num(topic.votes)} verified roll-call votes,
       ${num(topic.members)} members. This axis accounts for ${pct(topic.explained_variance)}
       of the disagreement among those votes${
@@ -1428,7 +1481,7 @@ const AXIS_COLOURS = [
 function landscapeAxes() {
   const available = state.landscapeAxisData?.[String(state.term)] || [];
   return state.landscapeAxisCodes
-    .map((code) => available.find((a) => a.code === code))
+    .map((id) => available.find((a) => a.id === id))
     .filter(Boolean);
 }
 
@@ -1441,8 +1494,8 @@ async function initLandscapeAxes() {
   $("landscape-axis-add").innerHTML =
     `<option value="">Add a subject…</option>` +
     available
-      .filter((a) => !chosen.has(a.code))
-      .map((a) => `<option value="${a.code}">${escape(a.label)}</option>`)
+      .filter((a) => !chosen.has(a.id))
+      .map((a) => `<option value="${a.id}">${escape(axisName(a))}</option>`)
       .join("");
   $("landscape-axis-add").value = "";
 
@@ -1455,13 +1508,13 @@ async function initLandscapeAxes() {
       return (
         `<span class="chip-axis" style="border-color:rgb(${r},${g},${b})">` +
         `<span class="dash" style="background:rgb(${r},${g},${b})"></span>` +
-        `<span class="name">${escape(axis.label)}</span>` +
+        `<span class="name">${escape(axisName(axis))}</span>` +
         // Not class="ends": that name already belongs to the two-column block on the
         // Axes tab, whose 280px grid track would silently become this chip's width.
         `<span class="poles">${escape(groupTag(axis.low_group))} ↔ ${escape(
           groupTag(axis.high_group)
         )}</span>` +
-        `<button data-code="${axis.code}" aria-label="Remove ${escape(axis.label)}">×</button>` +
+        `<button data-code="${axis.id}" aria-label="Remove ${escape(axisName(axis))}">×</button>` +
         `</span>`
       );
     })
@@ -1506,7 +1559,7 @@ function axisLayers(points, spread) {
       colour: AXIS_COLOURS[index % AXIS_COLOURS.length],
       from: unit.map((v) => -v),
       to: unit,
-      label: axis.label,
+      label: axisName(axis),
       lowAt: unit.map((v) => -v * 1.07),
       highAt: unit.map((v) => v * 1.07),
       low: groupTag(axis.low_group),
