@@ -771,6 +771,29 @@ def publish(data_dir: Path) -> None:
 
     _write_topic_axes(con, out, terms)
 
+    # The same topic axes as directions in the main landscape's own frame, so that view
+    # can draw a named subject through its cloud without anyone having to leave it. Kept
+    # apart from topic-axes.json because that bundle carries a score per member per
+    # subject and is most of a megabyte; this is a few numbers per subject.
+    directions: dict[str, list] = {}
+    for row in _rows(
+        con,
+        """
+        SELECT term, theme_code AS code, theme_label AS label, votes,
+               [dir1, dir2, dir3] AS direction,
+               -- How much of this subject's division the three main axes account for.
+               -- An arrow for a subject that mostly divides members in some fourth
+               -- direction must not be drawn as confidently as one that lies in view.
+               round(space_fit, 3) AS fit,
+               low_group, high_group
+        FROM topic_axes
+        WHERE dir1 IS NOT NULL
+        ORDER BY term, votes DESC
+        """,
+    ):
+        directions.setdefault(str(row.pop("term")), []).append(row)
+    _write(out, "landscape-axes.json", directions)
+
     # Per-theme detail: what the theme covers, how each group treated it, and its most
     # recent votes. Kept separate from the cloud so a topic page loads text first.
     theme_rows = _rows(

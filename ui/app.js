@@ -26,6 +26,8 @@ const state = {
   // selected subject.
   topicAxes: null, tlDrawn: null, tlDeck: null, tlTopic: null, tlChosenFrame: false,
   groupDetail: null,
+  // Subject axes overlaid on the main landscape, as a biplot.
+  landscapeAxisData: null, landscapeAxisCodes: [],
 };
 
 const $ = (id) => document.getElementById(id);
@@ -736,19 +738,9 @@ function drawTopicFrame() {
     label: topic.label,
   }));
 
-  if (state.tlDeck) state.tlDeck.finalize();
-  state.tlDeck = new deck.Deck({
-    canvas: "tl-deck",
-    views: new deck.OrbitView({ orbitAxis: "Y", fovy: 50 }),
-    initialViewState: {
-      target: [0, 0, 0],
-      rotationX: 18,
-      rotationOrbit: 25,
-      zoom: Math.log2((frame * 0.4) / TL_SPAN),
-      minZoom: -4,
-      maxZoom: 8,
-    },
-    controller: true,
+  // Reused rather than rebuilt, for the same reason as the main landscape: a new Deck
+  // costs a WebGL context, and this view is redrawn on every change of subject.
+  const tlProps = {
     layers: [
       new deck.LineLayer({
         id: "tl-axes",
@@ -799,7 +791,25 @@ function drawTopicFrame() {
         style: { fontSize: "0.78rem" },
       },
     onClick: ({ object }) => object && showMep(object.id, $("tl-detail")),
-  });
+  };
+  if (state.tlDeck) {
+    state.tlDeck.setProps(tlProps);
+  } else {
+    state.tlDeck = new deck.Deck({
+      canvas: "tl-deck",
+      views: new deck.OrbitView({ orbitAxis: "Y", fovy: 50 }),
+      initialViewState: {
+        target: [0, 0, 0],
+        rotationX: 18,
+        rotationOrbit: 25,
+        zoom: Math.log2((frame * 0.4) / TL_SPAN),
+        minZoom: -4,
+        maxZoom: 8,
+      },
+      controller: true,
+      ...tlProps,
+    });
+  }
 }
 
 function renderTopicAxisList(bundle) {
@@ -1246,12 +1256,9 @@ async function drawTopicCloud(theme) {
     `subject — so votes on one theme scatter when members disagreed about them in ` +
     `different ways, and cluster when they divided the chamber alike.`;
 
-  if (state.topicDeck) state.topicDeck.finalize();
-  state.topicDeck = new deck.Deck({
-    canvas: "topic-cloud",
-    views: new deck.OrbitView({ orbitAxis: "Y", fovy: 50 }),
-    initialViewState: { target: [0, 0, 0], rotationX: 20, rotationOrbit: 25, zoom: 3.4 },
-    controller: true,
+  // Reused, not rebuilt: every theme page visited would otherwise cost another WebGL
+  // context, and the browser only grants a few before dropping the one in use.
+  const cloudProps = {
     layers: [
       new deck.PointCloudLayer({
         id: "all-votes",
@@ -1273,10 +1280,21 @@ async function drawTopicCloud(theme) {
     ],
     getTooltip: ({ object }) =>
       object && {
-        html: `${theme.label}<br>vote ${object.id} · ${object.term}th term`,
+        html: `${escape(theme.label)}<br>vote ${object.id} · ${object.term}th term`,
         style: { fontSize: "0.78rem" },
       },
-  });
+  };
+  if (state.topicDeck) {
+    state.topicDeck.setProps(cloudProps);
+  } else {
+    state.topicDeck = new deck.Deck({
+      canvas: "topic-cloud",
+      views: new deck.OrbitView({ orbitAxis: "Y", fovy: 50 }),
+      initialViewState: { target: [0, 0, 0], rotationX: 20, rotationOrbit: 25, zoom: 3.4 },
+      controller: true,
+      ...cloudProps,
+    });
+  }
 }
 
 // ---------------------------------------------------------------- stories
@@ -1349,11 +1367,19 @@ function showStory(slug) {
 function initLandscape() {
   termOptions($("landscape-term"), () => {
     renderFilterOptions();
-    drawLandscape();
+    // A subject the new term has no axis for simply drops out of the selection.
+    initLandscapeAxes().then(drawLandscape);
   });
   $("landscape-colour").onchange = drawLandscape;
   renderFilterOptions();
   $("landscape-filter").onchange = drawLandscape;
+  $("landscape-axis-add").onchange = () => {
+    const code = $("landscape-axis-add").value;
+    if (!code) return;
+    state.landscapeAxisCodes = [...state.landscapeAxisCodes, code];
+    initLandscapeAxes().then(drawLandscape);
+  };
+  initLandscapeAxes().then(drawLandscape);
 }
 
 function renderFilterOptions() {
@@ -1391,6 +1417,147 @@ function hslToRgb(h, s, l) {
   const a = s * Math.min(l, 1 - l);
   const f = (n) => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
   return [f(0) * 255, f(8) * 255, f(4) * 255].map(Math.round);
+}
+
+// Distinct from every group colour, so an overlaid subject axis never reads as a group.
+const AXIS_COLOURS = [
+  [30, 30, 34], [0, 120, 130], [150, 70, 0], [90, 40, 140], [120, 110, 0],
+];
+
+/** The subject axes currently drawn through the landscape, for the selected term. */
+function landscapeAxes() {
+  const available = state.landscapeAxisData?.[String(state.term)] || [];
+  return state.landscapeAxisCodes
+    .map((code) => available.find((a) => a.code === code))
+    .filter(Boolean);
+}
+
+async function initLandscapeAxes() {
+  if (!state.landscapeAxisData) {
+    state.landscapeAxisData = await load("landscape-axes.json").catch(() => ({}));
+  }
+  const available = state.landscapeAxisData[String(state.term)] || [];
+  const chosen = new Set(state.landscapeAxisCodes);
+  $("landscape-axis-add").innerHTML =
+    `<option value="">Add a subject…</option>` +
+    available
+      .filter((a) => !chosen.has(a.code))
+      .map((a) => `<option value="${a.code}">${escape(a.label)}</option>`)
+      .join("");
+  $("landscape-axis-add").value = "";
+
+  $("landscape-axis-chips").innerHTML = landscapeAxes()
+    .map((axis, index) => {
+      const [r, g, b] = AXIS_COLOURS[index % AXIS_COLOURS.length];
+      // Written without whitespace between the elements: inside a flex container the
+      // indentation of a multi-line template becomes anonymous flex items, which pad the
+      // chip out to several times the width of its text.
+      return (
+        `<span class="chip-axis" style="border-color:rgb(${r},${g},${b})">` +
+        `<span class="dash" style="background:rgb(${r},${g},${b})"></span>` +
+        `<span class="name">${escape(axis.label)}</span>` +
+        // Not class="ends": that name already belongs to the two-column block on the
+        // Axes tab, whose 280px grid track would silently become this chip's width.
+        `<span class="poles">${escape(groupTag(axis.low_group))} ↔ ${escape(
+          groupTag(axis.high_group)
+        )}</span>` +
+        `<button data-code="${axis.code}" aria-label="Remove ${escape(axis.label)}">×</button>` +
+        `</span>`
+      );
+    })
+    .join("");
+  $("landscape-axis-chips")
+    .querySelectorAll("button")
+    .forEach((b) =>
+      b.addEventListener("click", () => {
+        state.landscapeAxisCodes = state.landscapeAxisCodes.filter(
+          (c) => c !== b.dataset.code
+        );
+        initLandscapeAxes().then(drawLandscape);
+      })
+    );
+}
+
+/** Subject axes as lines through the cloud, in the landscape's own frame.
+ *
+ * A subject's axis is stored as a direction in standardised component units, but the
+ * cloud is drawn in raw ones, where the first component is several times wider than the
+ * third. Drawn unconverted, an arrow would point somewhere no member actually is. Scaling
+ * each component by its spread turns the direction into the one a reader can check by
+ * eye: members far along the line are the members high on that subject.
+ */
+function axisLayers(points, spread) {
+  const axes = landscapeAxes();
+  if (!axes.length || !points.length) return [];
+  const sd = [0, 1, 2].map((k) => {
+    const values = points.map((p) => p.position[k]);
+    const m = mean(values);
+    return Math.sqrt(mean(values.map((v) => (v - m) ** 2))) || 1;
+  });
+
+  const lines = axes.map((axis, index) => {
+    const raw = axis.direction.map((v, k) => v * sd[k]);
+    const norm = Math.hypot(...raw) || 1;
+    // Length carries how much of the subject's division these three axes account for:
+    // a subject that mostly divides members in some fourth direction is drawn shorter.
+    const reach = spread * 1.25 * axis.fit;
+    const unit = raw.map((v) => (v / norm) * reach);
+    return {
+      colour: AXIS_COLOURS[index % AXIS_COLOURS.length],
+      from: unit.map((v) => -v),
+      to: unit,
+      label: axis.label,
+      lowAt: unit.map((v) => -v * 1.07),
+      highAt: unit.map((v) => v * 1.07),
+      low: groupTag(axis.low_group),
+      high: groupTag(axis.high_group),
+    };
+  });
+
+  // The subject's name sits past the positive tip and the group names at the tips
+  // themselves, separated vertically so a long theme label does not land on top of the
+  // group it points at.
+  const text = lines.flatMap((line) => [
+    {
+      at: line.highAt.map((v, k) => v + (k === 1 ? spread * 0.14 : 0)),
+      text: line.label,
+      colour: line.colour,
+    },
+    // ASCII only: the text layer's default font atlas has no arrow glyphs and drops
+    // them without drawing anything.
+    { at: line.highAt, text: `${line.high} >`, colour: line.colour },
+    { at: line.lowAt, text: `< ${line.low}`, colour: line.colour },
+  ]);
+
+  return [
+    new deck.LineLayer({
+      id: "landscape-subject-axes",
+      data: lines,
+      coordinateSystem: deck.COORDINATE_SYSTEM.CARTESIAN,
+      getSourcePosition: (d) => d.from,
+      getTargetPosition: (d) => d.to,
+      getColor: (d) => [...d.colour, 215],
+      getWidth: 2.2,
+    }),
+    new deck.TextLayer({
+      id: "landscape-subject-labels",
+      data: text,
+      coordinateSystem: deck.COORDINATE_SYSTEM.CARTESIAN,
+      getPosition: (d) => d.at,
+      getText: (d) => d.text,
+      getSize: 12,
+      sizeUnits: "pixels",
+      sizeMinPixels: 11,
+      sizeMaxPixels: 13,
+      getColor: (d) => [...d.colour, 240],
+      billboard: true,
+      background: true,
+      getBackgroundColor: [255, 255, 255, 205],
+      backgroundPadding: [4, 2],
+      getTextAnchor: "middle",
+      getAlignmentBaseline: "center",
+    }),
+  ];
 }
 
 function drawLandscape() {
@@ -1446,13 +1613,12 @@ function drawLandscape() {
     maxZoom: 8,
   };
 
-  if (state.deck) state.deck.finalize();
-  state.deck = new deck.Deck({
-    canvas: "deck",
-    views: view,
-    initialViewState: viewState,
-    controller: true,
-    layers: [layer],
+  // Update the existing deck rather than replacing it. Each `new deck.Deck` takes a
+  // fresh WebGL context, and a browser allows only a handful: rebuilding on every
+  // redraw — a term change, a colour change, adding a subject axis — lost the context
+  // and left the canvas blank. Reusing it also keeps the camera where the reader put it.
+  const props = {
+    layers: [layer, ...axisLayers(points, spread)],
     getTooltip: ({ object }) =>
       object && {
         html: `<b>${object.name}</b><br>${groupLabel(object.group)} · ${object.country}<br>
@@ -1460,7 +1626,18 @@ function drawLandscape() {
         style: { fontSize: "0.8rem" },
       },
     onClick: ({ object }) => object && showMep(object.id, $("landscape-detail")),
-  });
+  };
+  if (state.deck) {
+    state.deck.setProps(props);
+  } else {
+    state.deck = new deck.Deck({
+      canvas: "deck",
+      views: view,
+      initialViewState: viewState,
+      controller: true,
+      ...props,
+    });
+  }
 
   renderLegend(mode, countries, points);
   renderAxisVotes();

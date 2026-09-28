@@ -50,3 +50,10 @@ keep that relative layout.
   proposals on a subject both come to a vote, so a yes-count would put the backers of
   opposing texts at the same end. Each subject publishes how far the naive reading would
   have agreed with its axis, and the page says when it would mislead.
+- **Subject axes on the main landscape are a biplot, not decoration.** A subject's axis
+  is stored as a direction in standardised component units, while the cloud is drawn in
+  raw ones where the first component is several times wider than the third. The overlay
+  scales each component by its spread before drawing, so a line points where the members
+  high on that subject actually are — something a reader can check by eye against the
+  group at each end. Line length carries how much of that subject's division the three
+  axes account for.

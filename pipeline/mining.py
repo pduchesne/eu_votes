@@ -329,19 +329,29 @@ def _finite(value: float) -> float | None:
     return None if value is None or not np.isfinite(value) else round(float(value), 4)
 
 
-def _direction(space: np.ndarray, score: np.ndarray) -> np.ndarray:
-    """Where a topic axis points in the main three-component space, as a unit vector.
+def _direction(space: np.ndarray, score: np.ndarray) -> tuple[np.ndarray, float]:
+    """Where a topic axis points in the main three-component space, and how much of it
+    lives there at all.
 
     Least squares rather than three separate correlations: the global components are
     uncorrelated over a whole term but not over the subset of members who voted on one
     subject, and marginal correlations on that subset can sum to more than the whole.
     Coefficients are standardised so no component wins for being on a larger scale.
+
+    The second return value is the share of the subject's axis the three components
+    account for. A direction alone would let a subject whose division is mostly
+    perpendicular to the whole political space be drawn as confidently as one that lies
+    squarely in it, so anything drawing these arrows should scale them by this.
     """
     centred = space - space.mean(axis=0)
-    beta, *_ = np.linalg.lstsq(centred, score - score.mean(), rcond=None)
+    residual = score - score.mean()
+    beta, *_ = np.linalg.lstsq(centred, residual, rcond=None)
+    fitted = centred @ beta
+    total = float((residual ** 2).sum())
+    fit = float(1 - ((residual - fitted) ** 2).sum() / total) if total else 0.0
     beta = beta * centred.std(axis=0)
     norm = float(np.linalg.norm(beta))
-    return beta / norm if norm else np.zeros(N_COMPONENTS)
+    return (beta / norm if norm else np.zeros(N_COMPONENTS)), max(0.0, fit)
 
 
 def _span(directions: list[np.ndarray]) -> float:
@@ -410,7 +420,7 @@ def topic_axes(con) -> dict:
             "term INTEGER, theme_code VARCHAR, theme_label VARCHAR, votes INTEGER,"
             " members INTEGER, explained_variance DOUBLE, global_alignment DOUBLE,"
             " support_correlation DOUBLE, low_group VARCHAR, high_group VARCHAR,"
-            " dir1 DOUBLE, dir2 DOUBLE, dir3 DOUBLE",
+            " dir1 DOUBLE, dir2 DOUBLE, dir3 DOUBLE, space_fit DOUBLE",
         ),
         (
             # The three subjects proposed as a default frame, and how well they span.
@@ -488,16 +498,18 @@ def topic_axes(con) -> dict:
 
         # Which way this subject's axis points in the main space. Needed to choose a
         # frame that spans it rather than three views of the same division.
-        pointing = _direction(space, score) if space.any() else np.zeros(N_COMPONENTS)
+        pointing, space_fit = (
+            _direction(space, score) if space.any() else (np.zeros(N_COMPONENTS), 0.0)
+        )
         directions.setdefault(term, {})[code] = (pointing, len(votes))
 
         con.execute(
-            "INSERT INTO topic_axes VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO topic_axes VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             [
                 term, code, label, len(votes), len(members),
                 float(pca.explained_variance_ratio_[0]), _finite(alignment),
                 _finite(support), low, high,
-                *(_finite(v) for v in pointing),
+                *(_finite(v) for v in pointing), _finite(space_fit),
             ],
         )
         _insert(
